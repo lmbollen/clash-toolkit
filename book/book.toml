@@ -5,4 +5,4 @@ language = "en"
 src = "src"
 
 [output.html]
-git-repository-url = "https://github.com/clash-lang/clash-vscode"
+git-repository-url = "https://github.com/lmbollen/clash-toolkit"

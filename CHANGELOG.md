@@ -5,9 +5,15 @@ All notable changes to **Clash Toolkit** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1] - 2026-07-20
+## [0.2.1] - 2026-07-28
+
 ### Fixed
-Fixed references to github repositor, bumped dependencies and fixed failing test
+- Marketplace repository, issues, and homepage links pointed at a stale
+  repository name. The project now lives at
+  [lmbollen/clash-toolkit](https://github.com/lmbollen/clash-toolkit) and all
+  metadata points there, so the README's documentation links resolve correctly.
+- Corrected the `git-repository-url` used by the generated documentation book.
+- Bumped development dependencies and fixed a failing tool-provider test.
 
 ## [0.2.0] - 2026-07-20
 
