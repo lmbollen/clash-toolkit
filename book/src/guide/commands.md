@@ -1,14 +1,45 @@
 # Commands
 
-All commands are available from the VS Code command palette (`Ctrl+Shift+P`).
+The main commands are available from the VS Code command palette
+(`Ctrl+Shift+P`). Commands that act on a specific tree item are reachable only
+from the **Clash Synthesis** sidebar — its view title bars and right-click
+menus — and are hidden from the palette.
+
+## Main flow
 
 | Command | Description |
 |---------|-------------|
 | **Clash: Detect Functions** | Scan the current file for functions, show which are synthesisable |
-| **Clash: Synthesize Function to Verilog** | Generate a wrapper module, compile to Verilog with Clash, optionally run Yosys |
-| **Clash: Synthesize Only** | Full Clash → Yosys pipeline without place & route. Optional out-of-context mode for per-module diagrams |
-| **Clash: Synthesize and Place & Route** | Full pipeline: Clash → Yosys → nextpnr |
-| **Clash: Check Toolchain** | Verify all external tools (Clash, Yosys, nextpnr) are reachable |
+| **Clash: Generate Verilog** | Generate a wrapper module and compile to Verilog with Clash |
+| **Clash: Elaborate** | Clash → Yosys elaboration only (no tech mapping), one diagram per module |
+| **Clash: Synthesize** | Full Clash → Yosys pipeline without place & route. Optional out-of-context mode for per-module diagrams |
+| **Clash: Place & Route** | Full pipeline: Clash → Yosys → nextpnr |
+
+## Toolchain
+
+| Command | Description |
+|---------|-------------|
+| **Clash: Check Toolchain** | Probe every external tool (cabal, Yosys, `dot`, nextpnr) and report what is reachable |
+| **Clash: Install Toolchain** | Pick which EDA tools the extension should download and manage itself |
+
+## Sidebar
+
+| Command | Where | Description |
+|---------|-------|-------------|
+| **Clash: Refresh Haskell Functions** | Haskell Functions title bar | Re-scan the workspace for functions |
+| **Clash: Go To Function** | Click a Haskell Functions item | Jump to the function's definition |
+| **Clash: Open Settings** | Gear icon in all three title bars | Open the settings panel (synthesis target and scripts) |
+| **Clash: Open Synthesized Verilog** | Synthesis Results item, inline icon | Open the Yosys-synthesized Verilog |
+| **Clash: View Module Diagram** | Synthesis Results item, inline icon | Open a module's schematic SVG |
+| **Clash: Refresh Run History** | Run History title bar | Re-read past runs from `.clash/` |
+| **Clash: Show Run in Synthesis Results** | Click a Run History item | Load a past run into the results view |
+| **Clash: Open Verilog (History)** | Run History item, inline icon | Open a past run's Verilog |
+| **Clash: View Diagram (History)** | Run History item, inline icon | Open a past run's diagram |
+| **Clash: Delete Run** | Run History item, inline icon | Delete a run's output directory |
+
+The four main-flow commands (**Generate Verilog**, **Elaborate**, **Synthesize**,
+**Place & Route**) also appear as icons in the **Haskell Functions** title bar,
+so you can drive the whole flow from the sidebar without the palette.
 
 ## Detect Functions
 
@@ -16,7 +47,7 @@ Scans the current Haskell file (or all open Haskell documents) using HLS documen
 
 If you select a monomorphic function, you're offered the option to synthesize it immediately.
 
-## Synthesize Function to Verilog
+## Generate Verilog
 
 An interactive command that:
 
@@ -26,7 +57,7 @@ An interactive command that:
 4. Compiles to Verilog with Clash
 5. Optionally runs Yosys synthesis
 
-## Synthesize Only
+## Synthesize
 
 Runs the full Clash compilation and Yosys synthesis pipeline without place & route. This is useful when you want to inspect synthesis results and circuit diagrams without targeting a specific FPGA.
 
@@ -36,14 +67,21 @@ Respects the `outOfContext` setting:
 
 Elaboration (`Clash: Elaborate`) always runs per-module regardless of this setting — its goal is to give a faithful per-component view of what Clash produced.
 
-## Synthesize and Place & Route
+## Place & Route
 
 The full FPGA implementation pipeline. After detecting and selecting a function:
 
 1. Generates wrapper module
 2. Compiles to Verilog with Clash
-3. Synthesizes with Yosys (ECP5 target)
+3. Synthesizes with Yosys for the configured target
 4. Parses SDC files for target clock frequency
-5. Runs nextpnr-ecp5 with the selected device and package
+5. Runs the target's `nextpnr-*` binary with the selected device and package
 
-You'll be prompted to choose an ECP5 device (25k/45k/85k) and package (CABGA381/554/756).
+The FPGA family comes from the `synthesisTarget` setting, **not** from a prompt.
+Place & route is available for `ecp5`, `ice40`, and `gowin`; with any other
+target (`generic`, `xilinx`, `quicklogic`, `sf2`) the command reports that P&R
+is unavailable and stops, because no nextpnr binary is wired up for it.
+
+Once the family is known you're prompted for a device, and then for a package if
+that device offers a choice. The device list is family-specific — see
+[Nextpnr Integration](../architecture/nextpnr-integration.md) for the full set.

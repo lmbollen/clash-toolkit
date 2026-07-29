@@ -5,8 +5,13 @@
 | Channel | Where | Content |
 |---------|-------|---------|
 | **Clash Synthesis** | Output panel | Extension operations, Clash/Yosys/nextpnr invocations |
+| **File log** | `.clash/debug.log` in the workspace | Same detail, persisted to disk |
 | **Extension Host** | Output panel | Extension lifecycle events |
 | **Developer Tools Console** | Help → Toggle Developer Tools | Low-level errors, stack traces |
+
+The file log is the one to reach for after a crash: the previous session is
+rotated to `.clash/debug.log.old` on activation, so evidence survives a restart
+that would otherwise clear the Output panel.
 
 ## Attaching the Debugger
 

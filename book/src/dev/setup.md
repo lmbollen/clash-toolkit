@@ -9,13 +9,22 @@ The project uses [Nix](https://nixos.org/) to provide a reproducible development
 - **Cabal** for building the test Haskell project
 - **Haskell Language Server** (HLS)
 - **Yosys** for logic synthesis
+- **Graphviz** for rendering schematic diagrams
 - **nextpnr** for place & route (ice40, ecp5, …)
+- **mdbook** for building this book
 
 Enter the shell:
 
 ```bash
 nix develop
 ```
+
+The dev shell prints the resolved version of each tool on entry, which is the
+quickest way to confirm the environment is what you expect.
+
+Note that the dev shell provides these for *extension development*. At runtime
+the extension does not depend on them being present — it can download its own
+EDA tools, as described in [Getting Started](../guide/getting-started.md).
 
 ## Building the Extension
 
@@ -43,6 +52,18 @@ npm run watch        # incremental recompilation (background)
 | `book/` | mdbook documentation (this book) |
 | `flake.nix` | Nix dev-shell definition |
 
+## Building the Documentation
+
+```bash
+mdbook build book     # render to book/book/ (git-ignored)
+mdbook serve book     # live-reloading preview on localhost:3000
+```
+
 ## NixOS Notes
 
-On NixOS the VS Code test runner downloads an Electron binary that cannot find system libraries (`libglib-2.0.so.0`, etc.). **Run tests via F5 inside VS Code** instead of `npm test` from the terminal. See the [Testing](testing.md) chapter for details.
+`npm test` works from the terminal, including on NixOS — `runTest.ts` strips the
+environment variables VS Code leaks into its integrated terminal and honours
+`VSCODE_EXECUTABLE_PATH` for hosts where the downloaded Electron binary cannot
+find system libraries (`libglib-2.0.so.0`, etc.). Point that variable at a
+nix-wrapped Electron build if the default download fails. See the
+[Testing](testing.md) chapter for details.

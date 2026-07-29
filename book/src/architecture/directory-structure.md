@@ -31,5 +31,7 @@ All generated files live under `.clash/` in the workspace root.
           yosys.log
     04-nextpnr/                      Place & route output
       function_name.config           Textual FPGA configuration
+      function_name.routed.svg       Routed-layout SVG (when pnrWriteRoutedSvg)
+      report.json                    Machine-readable timing/utilisation report
       nextpnr.log
 ```

@@ -5,7 +5,34 @@ All settings live under `clash-toolkit` in VS Code settings.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `yosysCommand` | `yosys` | Command to invoke Yosys |
+| `synthesisTarget` | `generic` | Target FPGA family for Yosys synthesis. One of `generic`, `ice40`, `ecp5`, `xilinx`, `gowin`, `quicklogic`, `sf2`. Also selects the nextpnr binary for Place & Route |
 | `outOfContext` | `false` | Out-of-context synthesis: when enabled, each component in a multi-component design is synthesized standalone with its own diagram + utilization stats |
+| `pnrTargetFrequencyMHz` | *(unset)* | Target frequency passed to nextpnr as `--freq`. Used only when no SDC file is present — an SDC constraint takes precedence. Leave blank to let nextpnr report Fmax without a target |
+| `pnrWriteRoutedSvg` | `true` | Write a routed-layout SVG alongside the nextpnr output, showing where the design landed on the fabric |
+| `elaborationScript` | *(built-in)* | Custom Yosys script for the elaboration stage |
+| `synthesisScript.<target>` | *(built-in)* | Custom Yosys script per target — one setting for each of the seven targets above |
+
+## Custom Yosys Scripts
+
+Every synthesis target ships a built-in Yosys script, and each can be overridden:
+`elaborationScript` for the elaboration stage, and `synthesisScript.generic`,
+`synthesisScript.ice40`, `synthesisScript.ecp5`, `synthesisScript.xilinx`,
+`synthesisScript.gowin`, `synthesisScript.quicklogic`, and `synthesisScript.sf2`
+for synthesis. An empty string means "use the built-in default", so clearing a
+setting reverts it.
+
+Scripts are expanded with these placeholders before Yosys runs:
+
+| Placeholder | Expands to |
+|-------------|-----------|
+| `{files}` | The Verilog files to read |
+| `{topModule}` | The top module name |
+| `{outputDir}` | The stage's output directory |
+| `{outputBaseName}` | Base name for generated output files |
+
+The easiest way to edit these is **Clash: Open Settings** (the gear icon in the
+sidebar), which shows the active script for the selected target and an inline
+diff against the default so you can see exactly what you changed.
 
 ## Out-of-Context Synthesis
 

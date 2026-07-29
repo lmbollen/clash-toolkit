@@ -22,7 +22,12 @@ Yosys wrote the `.dot` file but `dot` could not convert it. Most commonly this h
 
 ### "No diagram rendered — install Graphviz"
 
-`dot` is not on the PATH. Install Graphviz (`nix-shell -p graphviz`, `apt install graphviz`, etc.) and re-run.
+`dot` could not be resolved, either from the PATH or from a managed install.
+Either accept the extension's offer to download it (see
+[Getting Started](getting-started.md)), run **Clash: Install Toolchain** and tick
+**Graphviz dot**, or install it yourself (`nix-shell -p graphviz`,
+`apt install graphviz`, …) and re-run. Synthesis itself still succeeds without
+`dot` — only the diagram is missing.
 
 ### Design was optimized away
 

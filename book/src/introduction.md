@@ -15,7 +15,10 @@ At every stage you can inspect output, view statistics, and open a schematic dia
 ## Feature Highlights
 
 - **Function detection** via HLS — finds monomorphic functions automatically
-- **Code actions** — press `Ctrl+.` on a function to synthesize it directly
+- **Code actions** — press `Ctrl+.` on a function to elaborate, synthesize, or place & route it directly
+- **Managed toolchain** — Yosys, Graphviz, and nextpnr can be downloaded on demand instead of installed by hand
+- **Sidebar** — browse functions, inspect synthesis results, and revisit past runs from the *Clash Synthesis* view
+- **Editable synthesis scripts** — override the Yosys script per target from the settings panel
 - **Optional out-of-context synthesis** — synthesize each module standalone for individual diagrams + utilization
 - **SDC frequency parsing** — reads Clash-generated `.sdc` files for target clock frequency
 - **Schematic diagrams** — Graphviz-rendered SVG schematic per synthesis run

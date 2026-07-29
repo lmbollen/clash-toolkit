@@ -2,16 +2,38 @@
 
 ## Prerequisites
 
-The extension does **not** ship any compilers or toolchains. You must have them available in your environment (e.g. via `nix develop`, `cabal`, or your system package manager).
+### You provide: the Haskell toolchain
 
-| Tool | Purpose | Required |
-|------|---------|----------|
-| **Clash** (`cabal run clash-synth:clash --`) | Haskell → Verilog compilation | Yes |
-| **Haskell Language Server** | Function detection & type info | Yes |
-| **Yosys** | Logic synthesis & statistics | For synthesis commands |
-| **nextpnr-ecp5** | Place & route | For P&R commands |
+These must be available in your environment (e.g. via `nix develop`, `ghcup`, or
+your system package manager). The extension cannot install them for you.
 
-Run **Clash: Check Toolchain** from the command palette to verify what is available.
+| Tool | Purpose |
+|------|---------|
+| **Cabal** (drives `cabal run clash-synth:clash --`) | Builds your project and invokes Clash to generate Verilog |
+| **Haskell Language Server** | Function detection and type information |
+
+### The extension provides: the EDA tools
+
+Yosys, Graphviz, and the `nextpnr-*` binaries do **not** have to be on your
+PATH. When a command needs one that is missing, the extension offers to
+download a self-contained [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build)
+build into its own private storage and use it from there.
+
+| Tool | Purpose | Needed for |
+|------|---------|-----------|
+| **Yosys** | Logic synthesis and statistics | Elaborate, Synthesize, Place & Route |
+| **Graphviz `dot`** | Renders the schematic SVGs | Diagrams (synthesis still succeeds without it) |
+| **nextpnr-ecp5** | Place & route for Lattice ECP5 | Place & Route, `ecp5` target |
+| **nextpnr-ice40** | Place & route for Lattice iCE40 | Place & Route, `ice40` target |
+| **nextpnr-himbaechel** | Place & route for Gowin | Place & Route, `gowin` target |
+
+Anything already on your PATH is used as-is — a managed download is only ever
+offered for tools that are missing, and only for the ones you tick in the
+prompt. Run **Clash: Check Toolchain** to see what is currently resolvable, or
+**Clash: Install Toolchain** to manage the download explicitly.
+
+> The suite is a single ~500 MB archive pinned to one release, so the first
+> download takes a while regardless of how many tools you select.
 
 ## Quick Start
 
@@ -56,6 +78,10 @@ Run **Clash: Check Toolchain** from the command palette to verify what is availa
 
 4. **Clash compilation** — Runs `cabal run clash-synth:clash -- ClashSynth_TopEntity --verilog` inside the synth project.
 
-5. **Yosys synthesis** — Runs Yosys with target-specific scripts (generic, iCE40, ECP5, Xilinx). For multi-component designs with out-of-context mode enabled, each sub-module is synthesized standalone.
+5. **Yosys synthesis** — Runs Yosys with a script chosen by the
+   `synthesisTarget` setting (`generic`, `ice40`, `ecp5`, `xilinx`, `gowin`,
+   `quicklogic`, `sf2`). Each target's script is editable — see
+   [Configuration](configuration.md). For multi-component designs with
+   out-of-context mode enabled, each sub-module is synthesized standalone.
 
 6. **Place & route** — Runs nextpnr for the selected device and reports timing and utilisation. The target frequency is parsed from Clash-generated SDC files.
