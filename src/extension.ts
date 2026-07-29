@@ -184,6 +184,25 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+	// Auto-refresh once HLS reports on the file it is showing.
+	//
+	// HLS publishes diagnostics when it has typechecked a file, which is the only
+	// documented signal available to another extension — there is no readiness
+	// API. This only re-detects while the view is in one of its "HLS gave us
+	// nothing" states, so ordinary editing (which also changes diagnostics) does
+	// not trigger repeated detection.
+	context.subscriptions.push(
+		vscode.languages.onDidChangeDiagnostics(e => {
+			if (!haskellFunctionsTreeProvider.isAwaitingHls()) { return; }
+			const editor = vscode.window.activeTextEditor;
+			if (!editor || !hlsClient.isHaskellDocument(editor.document)) { return; }
+			const uri = editor.document.uri.toString();
+			if (!e.uris.some(u => u.toString() === uri)) { return; }
+			hlsClient.invalidate(editor.document);
+			refreshHaskellFunctionsTree(editor.document);
+		})
+	);
+
 	// Refresh the functions view when a Haskell file is saved.
 	// Refreshes the tree only — there is no extension-level cache to invalidate;
 	// cabal handles incremental compilation correctly on its own.
@@ -230,8 +249,20 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('clash-toolkit.refreshHaskellFunctions', () => {
 			const editor = vscode.window.activeTextEditor;
 			if (editor && hlsClient.isHaskellDocument(editor.document)) {
+				hlsClient.invalidate(editor.document);
 				refreshHaskellFunctionsTree(editor.document);
 			}
+		})
+	);
+
+	// Command: open the Haskell extension in the Marketplace — the action on the
+	// sidebar row shown when HLS is unavailable because it isn't installed.
+	context.subscriptions.push(
+		vscode.commands.registerCommand('clash-toolkit.installHaskellExtension', async () => {
+			await vscode.commands.executeCommand(
+				'workbench.extensions.search',
+				`@id:${HASKELL_EXTENSION_ID}`
+			);
 		})
 	);
 
@@ -241,6 +272,34 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('clash-toolkit.viewModuleDiagram', (item) => {
 			openSvgPreview(item?.result?.svgPath);
 		})
+	);
+
+	// Command: open the diagram of a sub-component (a module instantiated by
+	// the one above it in the tree). Unlike the top-level diagram, this one is
+	// rendered on first open rather than during synthesis — there is no point
+	// laying out every module of a design nobody has asked to see.
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			'clash-toolkit.viewComponentDiagram',
+			async (item?: { netlistPath?: string; moduleName?: string }) => {
+				if (!item?.netlistPath || !item.moduleName) { return; }
+				const svgPath = await vscode.window.withProgress(
+					{
+						location: vscode.ProgressLocation.Window,
+						title: `Rendering diagram for ${item.moduleName}…`,
+					},
+					() => ensureSubDiagram(item.netlistPath!, item.moduleName!, outputChannel)
+				);
+				if (!svgPath) {
+					vscode.window.showWarningMessage(
+						`Could not render a diagram for ${item.moduleName}. ` +
+						'Check the output channel for details.'
+					);
+					return;
+				}
+				await openSvgPreview(svgPath);
+			}
+		)
 	);
 
 	// ── Run History commands ──────────────────────────────────────────────
@@ -274,34 +333,6 @@ export function activate(context: vscode.ExtensionContext) {
 			const svgPath: string | undefined =
 				item instanceof RunModuleNode ? item.svgPath : undefined;
 			openSvgPreview(svgPath);
-	// Command: open the diagram of a sub-component (a module instantiated by
-	// the one above it in the tree). Unlike the top-level diagram, this one is
-	// rendered on first open rather than during synthesis — there is no point
-	// laying out every module of a design nobody has asked to see.
-	context.subscriptions.push(
-		vscode.commands.registerCommand(
-			'clash-toolkit.viewComponentDiagram',
-			async (item?: { netlistPath?: string; moduleName?: string }) => {
-				if (!item?.netlistPath || !item.moduleName) { return; }
-				const svgPath = await vscode.window.withProgress(
-					{
-						location: vscode.ProgressLocation.Window,
-						title: `Rendering diagram for ${item.moduleName}…`,
-					},
-					() => ensureSubDiagram(item.netlistPath!, item.moduleName!, outputChannel)
-				);
-				if (!svgPath) {
-					vscode.window.showWarningMessage(
-						`Could not render a diagram for ${item.moduleName}. ` +
-						'Check the output channel for details.'
-					);
-					return;
-				}
-				await openSvgPreview(svgPath);
-			}
-		)
-	);
-
 		})
 	);
 
@@ -408,35 +439,63 @@ export function activate(context: vscode.ExtensionContext) {
 
 /**
  * Detect functions in the given document and update the Haskell functions
- * sidebar tree.  Shows a loading spinner while HLS analysis is running.
- * Silently ignores errors (HLS may not be ready yet).
+ * sidebar tree.
+ *
+ * HLS exposes no readiness API — the Haskell extension's `activate` returns
+ * nothing and its language client is private — so the view reports what *can* be
+ * established cheaply:
+ *
+ *   - **unavailable**: the Haskell extension is missing, or installed and could
+ *     not be activated. Nothing will change on its own, so the row offers the fix.
+ *   - **nothing yet**: HLS is there but returned no symbols. That is deliberately
+ *     not reported as "0 functions" — while HLS loads a project it answers with
+ *     nothing, which is indistinguishable from a file that has none. The view
+ *     re-checks when HLS next reports on the file (see the diagnostics
+ *     subscription in `activate`).
+ *   - **results**: symbols came back, so the sections are populated.
+ *
+ * A sequence guard drops results superseded by a newer refresh, e.g. when the
+ * user switches files while a slow detection is in flight.
  */
 let functionsTreeRefreshSeq = 0;
 
 async function refreshHaskellFunctionsTree(doc: vscode.TextDocument): Promise<void> {
-	// Sequence guard: HLS detections can complete out of order (switch from a
-	// slow-to-analyze file to a fast one), and a stale result must not
-	// overwrite the newer file's tree.
 	const seq = ++functionsTreeRefreshSeq;
+	const superseded = () => seq !== functionsTreeRefreshSeq;
+
 	haskellFunctionsTreeProvider.setLoading(doc.fileName);
+	const availability = await hlsClient.ensureActivated();
+	if (superseded()) { return; }
+
+	if (!availability.available) {
+		haskellFunctionsTreeProvider.setHlsUnavailable(
+			availability.reason ?? 'extension-inactive',
+			doc.fileName,
+		);
+		haskellFunctionsTreeView.message = `⚠ ${availability.message}`;
+		return;
+	}
+
+	// "Did HLS answer?" is a question about symbols, not about functions: a file
+	// with symbols but no top-level functions is a real answer and must not be
+	// reported as "still waiting".
+	const symbols = await hlsClient.getDocumentSymbols(doc);
+	if (superseded()) { return; }
+	if (symbols.length === 0) {
+		haskellFunctionsTreeProvider.setNoSymbolsYet(doc.fileName);
+		haskellFunctionsTreeView.message =
+			'⏳ HLS has not returned symbols for this file yet — it may still be loading the ' +
+			'project. This updates when HLS reports on the file, or use Refresh.';
+		return;
+	}
+
 	let functions: FunctionInfo[] = [];
 	try {
 		functions = await functionDetector.detectFunctions(doc);
-	} catch {
-		// HLS not ready — fall through with an empty list; the banner below
-		// explains why, and the user can hit Refresh once HLS is up.
-	}
-	if (seq !== functionsTreeRefreshSeq) {
-		return; // superseded by a newer refresh
-	}
+	} catch { /* HLS answered but analysis failed; report an empty result */ }
+	if (superseded()) { return; }
 	haskellFunctionsTreeProvider.refresh(functions, doc.fileName);
-
-	// When nothing was found, surface *why* in the view banner instead of
-	// showing a silently empty tree — most commonly the Haskell extension
-	// (which provides HLS) is missing or hasn't activated yet.
-	const hls = hlsClient.checkAvailability();
-	haskellFunctionsTreeView.message =
-		functions.length === 0 && !hls.available ? `⚠ ${hls.message}` : undefined;
+	haskellFunctionsTreeView.message = undefined;
 }
 
 /**

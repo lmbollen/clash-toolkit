@@ -71,6 +71,34 @@ export class HLSClient {
     }
 
     /**
+     * Start the Haskell extension if it is installed but hasn't activated.
+     *
+     * Its only activation events are `onLanguage:haskell`/`cabal`, so a window
+     * restored without a Haskell file open leaves HLS unstarted — and the user
+     * sees an empty function list with no explanation. Activating it ourselves
+     * removes that state instead of reporting it.
+     *
+     * @returns the availability after the attempt.
+     */
+    async ensureActivated(): Promise<HLSAvailability> {
+        const ext = vscode.extensions.getExtension(HASKELL_EXTENSION_ID);
+        if (!ext) { return this.checkAvailability(); }
+        if (ext.isActive) { return { available: true }; }
+        try {
+            this.outputChannel.appendLine('[HLS] Activating the Haskell extension…');
+            await ext.activate();
+        } catch (err) {
+            this.outputChannel.appendLine(`[HLS] Activation failed: ${err}`);
+        }
+        return this.checkAvailability();
+    }
+
+    /** Forget the cached symbols for a document. */
+    invalidate(document: vscode.TextDocument): void {
+        this.symbolCache.delete(document.uri.toString());
+    }
+
+    /**
      * Get all symbols in a document, caching by document version so repeated
      * calls (e.g. from code-action providers on every cursor move) don't
      * hammer HLS with redundant requests.

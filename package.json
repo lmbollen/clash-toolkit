@@ -99,6 +99,10 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "clash-toolkit.installHaskellExtension",
+        "title": "Clash: Install the Haskell Extension (for HLS)"
+      },
+      {
         "command": "clash-toolkit.viewModuleDiagram",
         "title": "Clash: View Module Diagram",
         "icon": "$(open-preview)"

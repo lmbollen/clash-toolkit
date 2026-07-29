@@ -27,9 +27,29 @@ Each entry shows the function's type signature as its description, and hovering
 gives the signature formatted as Haskell plus a note on why it can or cannot be
 synthesized. **Clicking a function jumps to its definition.**
 
-While HLS is still analysing, the view shows a spinning *Analyzing…* placeholder;
-with no Haskell file open it prompts you to open one. If the list looks stale,
-use **Clash: Refresh Haskell Functions** in the title bar.
+### When the list is empty
+
+An empty list has several possible causes, so the view names the one that applies
+instead of showing nothing:
+
+| Row | Meaning | What to do |
+|-----|---------|-----------|
+| *Analyzing…* | The extension is analysing symbols HLS returned | Wait; it's quick |
+| *No symbols from HLS yet* | HLS is reachable but returned nothing for this file | Usually it is still loading the project. The view re-checks when HLS next reports on the file; **Refresh** re-checks now |
+| *HLS unavailable — Haskell extension not installed* | Function detection needs `haskell.haskell` | Click the row to open it in the Marketplace |
+| *HLS unavailable — Haskell extension did not start* | It is installed but did not activate | Click the row to retry; its own output channel says why |
+| *Open a Haskell file to see functions* | No Haskell file is active | Open one |
+| *Monomorphic (0)* / *Polymorphic (0)* | HLS answered, and this file defines no top-level functions | Nothing — this is a real answer |
+
+The distinction between the last two matters: "no symbols yet" is *not* a verdict.
+While the Haskell Language Server loads a project it answers with nothing, which
+looks exactly like a file with no functions, so the view refuses to claim either.
+
+The extension starts the Haskell extension itself if it is installed but idle, and
+re-checks automatically when HLS publishes diagnostics for the file it is showing —
+that is the only signal another extension can observe, since HLS exposes no
+readiness API. If a file's functions still don't appear after HLS has settled, use
+**Clash: Refresh Haskell Functions** in the title bar.
 
 The title bar also carries the four main-flow actions — **Generate Verilog**,
 **Elaborate**, **Synthesize**, and **Place & Route** — so you can drive a run

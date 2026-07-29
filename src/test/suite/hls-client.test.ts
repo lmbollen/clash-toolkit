@@ -88,3 +88,28 @@ suite('HLS Client Test Suite', () => {
 			'Message should name the missing extension');
 	});
 });
+
+/**
+ * Availability of HLS, which is all the extension can establish cheaply: the
+ * Haskell extension exports no API, so there is nothing to ask about progress.
+ */
+suite('HLS Client — availability', () => {
+	let outputChannel: vscode.OutputChannel;
+	let hlsClient: HLSClient;
+
+	suiteSetup(() => {
+		outputChannel = vscode.window.createOutputChannel('Test HLS Availability');
+		hlsClient = new HLSClient(outputChannel);
+	});
+
+	suiteTeardown(() => outputChannel?.dispose());
+
+	test('ensureActivated reports a missing extension instead of throwing', async () => {
+		// The test host runs with an isolated extensions dir, so the Haskell
+		// extension is never installed.
+		const availability = await hlsClient.ensureActivated();
+		assert.strictEqual(availability.available, false);
+		assert.strictEqual(availability.reason, 'extension-missing');
+		assert.ok(availability.message?.includes('haskell.haskell'));
+	});
+});
