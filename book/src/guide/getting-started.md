@@ -29,11 +29,16 @@ build into its own private storage and use it from there.
 
 Anything already on your PATH is used as-is — a managed download is only ever
 offered for tools that are missing, and only for the ones you tick in the
-prompt. Run **Clash: Check Toolchain** to see what is currently resolvable, or
-**Clash: Install Toolchain** to manage the download explicitly.
+prompt. Run **Clash: Check Toolchain** to probe cabal, Yosys, `dot`, and
+`nextpnr-ecp5`, or **Clash: Install Toolchain** to manage the download
+explicitly. The iCE40 and Gowin binaries are checked when you actually run
+Place & Route for those targets.
 
-> The suite is a single ~500 MB archive pinned to one release, so the first
-> download takes a while regardless of how many tools you select.
+> The suite is a single archive (335–730 MB depending on platform) pinned to one
+> release, so the first download takes a while regardless of how many tools you
+> select.
+
+See [Managed Toolchain](managed-toolchain.md) for the full details.
 
 ## Quick Start
 

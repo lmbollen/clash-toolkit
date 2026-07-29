@@ -5,9 +5,12 @@
 # User Guide
 
 - [Getting Started](./guide/getting-started.md)
+- [Managed Toolchain](./guide/managed-toolchain.md)
+- [The Sidebar](./guide/sidebar.md)
 - [Commands](./guide/commands.md)
-- [Configuration](./guide/configuration.md)
 - [Code Actions](./guide/code-actions.md)
+- [Configuration](./guide/configuration.md)
+- [The Settings Panel](./guide/settings-panel.md)
 - [Circuit Diagrams](./guide/circuit-diagrams.md)
 - [Timing Analysis](./guide/timing-analysis.md)
 
