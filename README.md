@@ -11,7 +11,7 @@ Haskell source → Clash (Verilog) → Yosys (synthesis) → nextpnr (place & ro
 ## Quick Start
 
 1. Install the extension. You need Clash and HLS available (e.g. via `nix develop`).
-   **Yosys, nextpnr and Graphviz `dot` are optional** — if a command needs one
+   **Yosys and nextpnr are optional** — if a command needs one
    that isn't on your PATH, the extension shows a checklist of tools (missing
    ones pre-checked, found ones unchecked) and downloads the checked tools from
    a self-contained [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build)
@@ -34,7 +34,9 @@ cd book && mdbook serve   # http://localhost:3000
 Highlights:
 
 - [Getting Started](book/src/guide/getting-started.md) — prerequisites, first synthesis
-- [Commands](book/src/guide/commands.md) — all five commands
+- [Commands](book/src/guide/commands.md) — every command and what it runs
+- [The Sidebar](book/src/guide/sidebar.md) — the three views and what their rows mean
+- [Circuit Diagrams](book/src/guide/circuit-diagrams.md) — schematics and drilling into components
 - [Configuration](book/src/guide/configuration.md) — settings reference
 - [Architecture Overview](book/src/architecture/overview.md) — source layout and data flow
 - [Developer Setup](book/src/dev/setup.md) — building, running, Nix shell

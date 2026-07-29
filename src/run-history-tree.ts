@@ -1,8 +1,14 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { promises as fs } from 'fs';
-import { SynthesisStatistics } from './yosys-types';
+import { ModuleSynthesisResult, SynthesisStatistics } from './yosys-types';
 import { RunMetadata, readRunMeta, loadRunModules } from './run-loader';
+import { subComponentsOf } from './netlist-diagram';
+import {
+    OUT_OF_CONTEXT_NOTE,
+    SubComponentItem,
+    subComponentItems,
+} from './synthesis-results-tree';
 
 // ── Node types ──────────────────────────────────────────────────────────────
 
@@ -10,6 +16,7 @@ type HistoryTreeNode =
     | FunctionGroupNode
     | RunNode
     | RunModuleNode
+    | SubComponentItem
     | RunInfoItem;
 
 /** Top-level: groups runs by qualified function name. */
@@ -80,16 +87,35 @@ export class RunModuleNode extends vscode.TreeItem {
         readonly svgPath: string | undefined,
         readonly verilogFiles: string[],
         readonly statistics: SynthesisStatistics | undefined,
+        /** Netlist the module's sub-component diagrams are rendered from. */
+        readonly netlistPath?: string,
+        /** Modules this one instantiates — expandable when non-empty. */
+        readonly subComponents: string[] = [],
+        /** Components synthesized as runs of their own, nested under this one. */
+        readonly childModules: RunModuleNode[] = [],
+        /** True when this component was synthesized out of context. */
+        readonly outOfContext = false,
     ) {
-        super(moduleName, vscode.TreeItemCollapsibleState.None);
+        super(
+            moduleName,
+            subComponents.length > 0 || childModules.length > 0
+                ? vscode.TreeItemCollapsibleState.Collapsed
+                : vscode.TreeItemCollapsibleState.None
+        );
 
         const parts: string[] = [];
         if (statistics?.cellCount !== undefined) { parts.push(`${statistics.cellCount} cells`); }
         if (statistics?.wireCount !== undefined) { parts.push(`${statistics.wireCount} wires`); }
         if (statistics?.logicDepth !== undefined) { parts.push(`depth ${statistics.logicDepth}`); }
+        if (outOfContext) { parts.push('out of context'); }
         this.description = parts.join(' · ') || '';
 
         this.iconPath = new vscode.ThemeIcon('symbol-module');
+        if (outOfContext) {
+            this.tooltip = new vscode.MarkdownString(
+                `**${moduleName}**\n\n${OUT_OF_CONTEXT_NOTE}`
+            );
+        }
 
         let ctx = 'historyModule';
         if (svgPath) { ctx += '-diagram'; }
@@ -158,6 +184,17 @@ export class RunHistoryTreeProvider
             return this.getRunChildren(element);
         }
 
+        // Module / sub-component → list the components it instantiates
+        if (element instanceof RunModuleNode) {
+            return [
+                ...element.childModules,
+                ...await subComponentItems(element.netlistPath, element.subComponents),
+            ];
+        }
+        if (element instanceof SubComponentItem) {
+            return subComponentItems(element.netlistPath, element.subComponents);
+        }
+
         return [];
     }
 
@@ -212,13 +249,17 @@ export class RunHistoryTreeProvider
     private async getRunChildren(run: RunNode): Promise<HistoryTreeNode[]> {
         const { modules } = await loadRunModules(run.runRoot, run.meta);
         if (modules.length > 0) {
-            return modules.map(m => new RunModuleNode(
-                m.name,
-                run.runRoot,
-                m.svgPath,
-                m.verilogFiles ?? [],
-                m.statistics,
-            ));
+            // Nest per-module runs by their recorded component graph, so a run
+            // reads the same way whether or not it was synthesized per module.
+            const byName = new Map(modules.map(m => [m.name, m]));
+            const claimed = new Set(
+                modules.flatMap(m => (m.subComponents ?? []).filter(n => byName.has(n)))
+            );
+            const nodes: RunModuleNode[] = [];
+            for (const m of modules.filter(m => !claimed.has(m.name))) {
+                nodes.push(await this.buildModuleNode(run, m, byName, new Set()));
+            }
+            return nodes;
         }
 
         // Fallback: show metadata as info items
@@ -227,6 +268,44 @@ export class RunHistoryTreeProvider
         }
 
         return [new RunInfoItem('No details available', '', 'info')];
+    }
+
+    /**
+     * Build a module row for a past run, nesting the components it instantiates.
+     * `ancestors` stops a self-referential component graph from recursing
+     * forever.
+     */
+    private async buildModuleNode(
+        run: RunNode,
+        module: ModuleSynthesisResult,
+        byName: Map<string, ModuleSynthesisResult>,
+        ancestors: Set<string>,
+    ): Promise<RunModuleNode> {
+        const nextAncestors = new Set(ancestors).add(module.name);
+        const children: RunModuleNode[] = [];
+        for (const name of module.subComponents ?? []) {
+            const child = byName.get(name);
+            if (!child || nextAncestors.has(name)) { continue; }
+            children.push(await this.buildModuleNode(run, child, byName, nextAncestors));
+        }
+
+        // Only ask the netlist when there are no nested results — see the same
+        // reasoning in SynthesisResultsTreeProvider.buildModuleItem.
+        const fromNetlist = children.length === 0 && module.diagramJsonPath
+            ? await subComponentsOf(module.diagramJsonPath, module.name)
+            : [];
+
+        return new RunModuleNode(
+            module.name,
+            run.runRoot,
+            module.svgPath,
+            module.verilogFiles ?? [],
+            module.statistics,
+            module.diagramJsonPath,
+            fromNetlist,
+            children,
+            module.outOfContext ?? false,
+        );
     }
 }
 

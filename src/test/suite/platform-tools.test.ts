@@ -488,14 +488,15 @@ suite('Platform Tools Test Suite', () => {
 	// checkAll: all tools in a single call
 	// ---------------------------------------------------------------
 
-	test('checkAll should check cabal, yosys, dot, nextpnr-ecp5', async function () {
+	test('checkAll should check cabal, yosys, nextpnr-ecp5', async function () {
 		this.timeout(30000);
 		const results = await checker.checkAll();
 		assert.ok(results.has('cabal'), 'Should check cabal');
 		assert.ok(results.has('yosys'), 'Should check yosys');
-		assert.ok(results.has('dot'), 'Should check dot');
 		assert.ok(results.has('nextpnr-ecp5'), 'Should check nextpnr-ecp5');
-		assert.strictEqual(results.size, 4, 'Should check exactly 4 tools');
+		// Diagrams come from the bundled netlistsvg library — no `dot` probe.
+		assert.strictEqual(results.has('dot'), false, 'Should not check dot');
+		assert.strictEqual(results.size, 3, 'Should check exactly 3 tools');
 	});
 
 	// ---------------------------------------------------------------
@@ -508,7 +509,6 @@ suite('Platform Tools Test Suite', () => {
 		const summary = checker.formatSummary();
 		assert.ok(summary.includes('cabal'), 'Summary should mention cabal');
 		assert.ok(summary.includes('yosys'), 'Summary should mention yosys');
-		assert.ok(summary.includes('dot'), 'Summary should mention dot');
 		assert.ok(summary.includes('nextpnr-ecp5'), 'Summary should mention nextpnr-ecp5');
 	});
 

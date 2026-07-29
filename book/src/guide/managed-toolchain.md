@@ -1,7 +1,6 @@
 # Managed Toolchain
 
-Yosys, Graphviz, and the `nextpnr-*` binaries do not have to be installed by
-hand. When a command needs one that is missing, the extension offers to download
+Yosys and the `nextpnr-*` binaries do not have to be installed by hand. When a command needs one that is missing, the extension offers to download
 a self-contained [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build)
 build into its own private storage and run it from there.
 
@@ -28,7 +27,6 @@ checklist:
 | Tool | Used for |
 |------|----------|
 | Yosys | Elaborate, Synthesize, Place & Route |
-| Graphviz dot | Rendering the schematic SVGs |
 | nextpnr-ecp5 | Place & route for Lattice ECP5 |
 | nextpnr-ice40 | Place & route for Lattice iCE40 |
 | nextpnr-himbaechel | Place & route for Gowin |
@@ -43,8 +41,8 @@ Ticking a tool records the opt-in and, if a managed binary for it is not already
 present, fetches the archive. Dismissing the prompt changes nothing.
 
 Because the suite is distributed as **one archive containing every tool**, the
-download size does not depend on how many boxes you tick — selecting only
-Graphviz costs the same as selecting everything:
+download size does not depend on how many boxes you tick — selecting only Yosys
+costs the same as selecting everything:
 
 | Platform | Approximate download |
 |----------|---------------------|
@@ -81,8 +79,8 @@ missing tool will not fetch the archive twice.
 
 ## Checking what resolved
 
-**Clash: Check Toolchain** probes cabal, Yosys, `dot`, and `nextpnr-ecp5`, and
-reports what is reachable. The Tools section of the
+**Clash: Check Toolchain** probes cabal, Yosys, and `nextpnr-ecp5`, and reports
+what is reachable. The Tools section of the
 [Settings Panel](settings-panel.md) shows the same information continuously —
 including the resolved path, which is the quickest way to tell whether a given
 tool is coming from your PATH or from the managed install.

@@ -27,16 +27,21 @@ results are never overwritten. This is what the
             …
         03-yosys/                    Yosys synthesis results
           function_name_synth.v      Synthesized Verilog
-          function_name.json         JSON netlist (for nextpnr)
+          function_name.json         JSON netlist (for nextpnr and diagrams)
+          function_name.svg          Schematic diagram (netlistsvg)
+          diagrams/                  Sub-component diagrams, rendered on demand
+            {Module}.svg
           stats.json                 Machine-readable statistics (`stat -json`)
           statistics.txt             Human-readable statistics report
           logic_depth.txt            Longest topological path (`ltp`)
           synth.ys                   Yosys script
           yosys.log                  Complete Yosys output
           per-module/                Per-module synthesis outputs
+            hierarchy.json           Component graph + out-of-context flag
             {Module}/
               {Module}.il            RTLIL
               {Module}.json          JSON netlist
+              {Module}.svg           Schematic diagram (netlistsvg)
               synth.ys
               yosys.log
         04-nextpnr/                  Place & route output

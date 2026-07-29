@@ -12,8 +12,8 @@ reflected here as soon as the configuration changes.
 
 ## Tools
 
-A live view of the toolchain. Four tools are probed — **cabal**, **Yosys**,
-**`dot`**, and **`nextpnr-ecp5`** — each listed with:
+A live view of the toolchain. Three tools are probed — **cabal**, **Yosys**, and
+**`nextpnr-ecp5`** — each listed with:
 
 - whether it was found,
 - its version string,

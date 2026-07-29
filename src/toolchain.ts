@@ -76,16 +76,6 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
             + 'Elaborate, Synthesize, and Place & Route commands.',
     },
     {
-        id: 'dot',
-        label: 'dot (Graphviz)',
-        defaultCommand: 'dot',
-        versionFlag: '-V',
-        description:
-            'Graphviz `dot` renders the schematic SVG diagrams that Yosys '
-            + 'emits via its `show` command. Without it, synthesis still '
-            + 'succeeds but no diagram is produced.',
-    },
-    {
         id: 'nextpnr-ecp5',
         label: 'nextpnr-ecp5',
         defaultCommand: 'nextpnr-ecp5',

@@ -10,17 +10,18 @@ The extension integrates with **Haskell Language Server** (HLS) to find function
 Haskell source → Clash (Verilog) → Yosys (synthesis) → nextpnr (place & route)
 ```
 
-At every stage you can inspect output, view statistics, and open a schematic diagram rendered via Graphviz.
+At every stage you can inspect output, view statistics, and open a schematic diagram rendered with netlistsvg.
 
 ## Feature Highlights
 
 - **Function detection** via HLS — finds monomorphic functions automatically
 - **Code actions** — press `Ctrl+.` on a function to elaborate, synthesize, or place & route it directly
-- **Managed toolchain** — Yosys, Graphviz, and nextpnr can be downloaded on demand instead of installed by hand
+- **Managed toolchain** — Yosys and nextpnr can be downloaded on demand instead of installed by hand
 - **Sidebar** — browse functions, inspect synthesis results, and revisit past runs from the *Clash Synthesis* view
 - **Editable synthesis scripts** — override the Yosys script per target from the settings panel
-- **Optional out-of-context synthesis** — synthesize each module standalone for individual diagrams + utilization
+- **Optional out-of-context synthesis** — synthesize each component standalone (generic cells, no technology mapping) for a per-component diagram and statistics
 - **SDC frequency parsing** — reads Clash-generated `.sdc` files for target clock frequency
-- **Schematic diagrams** — Graphviz-rendered SVG schematic per synthesis run
+- **Schematic diagrams** — netlistsvg-rendered SVG schematic per synthesis run, with no extra tool to install
+- **Hierarchical inspection** — expand a module in the sidebar to reach the components it instantiates, each with its own diagram
 - **Full PnR flow** — ECP5 / iCE40 / Gowin place & route with timing analysis and utilization reports
 - **Debug logging** — all tool invocations logged to `.clash/debug.log`

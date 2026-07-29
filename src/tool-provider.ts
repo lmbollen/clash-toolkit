@@ -10,9 +10,9 @@ import { getLogger } from './file-logger';
 /**
  * Managed toolchain provider.
  *
- * The extension's synthesis flow spawns `yosys`, `dot` (Graphviz) and the
- * `nextpnr-*` binaries. Rather than force every user to install and PATH those
- * tools themselves, this class can download a self-contained
+ * The extension's synthesis flow spawns `yosys` and the `nextpnr-*` binaries.
+ * Rather than force every user to install and PATH those tools themselves, this
+ * class can download a self-contained
  * [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build) build — which
  * bundles all of them, mutually compatible — into the extension's private
  * global-storage directory, and resolve command names to the absolute paths of
@@ -41,7 +41,6 @@ export class ManagedToolchain {
     /** Command base-names this provider is able to supply via the suite. */
     private static readonly PROVIDED = new Set([
         'yosys',
-        'dot',
         'nextpnr-ecp5',
         'nextpnr-ice40',
         'nextpnr-himbaechel',
@@ -54,7 +53,6 @@ export class ManagedToolchain {
      */
     private static readonly PICKER_TOOLS: ReadonlyArray<{ id: string; label: string; detail: string }> = [
         { id: 'yosys', label: 'Yosys', detail: 'RTL synthesis — Elaborate, Synthesize, Place & Route' },
-        { id: 'dot', label: 'Graphviz dot', detail: 'Renders the schematic SVG diagrams' },
         { id: 'nextpnr-ecp5', label: 'nextpnr-ecp5', detail: 'Place & route for Lattice ECP5' },
         { id: 'nextpnr-ice40', label: 'nextpnr-ice40', detail: 'Place & route for Lattice iCE40' },
         { id: 'nextpnr-himbaechel', label: 'nextpnr-himbaechel', detail: 'Place & route for Gowin' },

@@ -14,22 +14,21 @@ your system package manager). The extension cannot install them for you.
 
 ### The extension provides: the EDA tools
 
-Yosys, Graphviz, and the `nextpnr-*` binaries do **not** have to be on your
-PATH. When a command needs one that is missing, the extension offers to
-download a self-contained [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build)
+Yosys and the `nextpnr-*` binaries do **not** have to be on your PATH. When a
+command needs one that is missing, the extension offers to download a
+self-contained [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build)
 build into its own private storage and use it from there.
 
 | Tool | Purpose | Needed for |
 |------|---------|-----------|
 | **Yosys** | Logic synthesis and statistics | Elaborate, Synthesize, Place & Route |
-| **Graphviz `dot`** | Renders the schematic SVGs | Diagrams (synthesis still succeeds without it) |
 | **nextpnr-ecp5** | Place & route for Lattice ECP5 | Place & Route, `ecp5` target |
 | **nextpnr-ice40** | Place & route for Lattice iCE40 | Place & Route, `ice40` target |
 | **nextpnr-himbaechel** | Place & route for Gowin | Place & Route, `gowin` target |
 
 Anything already on your PATH is used as-is — a managed download is only ever
 offered for tools that are missing, and only for the ones you tick in the
-prompt. Run **Clash: Check Toolchain** to probe cabal, Yosys, `dot`, and
+prompt. Run **Clash: Check Toolchain** to probe cabal, Yosys, and
 `nextpnr-ecp5`, or **Clash: Install Toolchain** to manage the download
 explicitly. The iCE40 and Gowin binaries are checked when you actually run
 Place & Route for those targets.
@@ -37,6 +36,10 @@ Place & Route for those targets.
 > The suite is a single archive (335–730 MB depending on platform) pinned to one
 > release, so the first download takes a while regardless of how many tools you
 > select.
+
+Schematic diagrams need no tool at all: they are rendered by
+[netlistsvg](https://github.com/nturley/netlistsvg), which is bundled with the
+extension. See [Circuit Diagrams](circuit-diagrams.md).
 
 See [Managed Toolchain](managed-toolchain.md) for the full details.
 
@@ -87,6 +90,7 @@ See [Managed Toolchain](managed-toolchain.md) for the full details.
    `synthesisTarget` setting (`generic`, `ice40`, `ecp5`, `xilinx`, `gowin`,
    `quicklogic`, `sf2`). Each target's script is editable — see
    [Configuration](configuration.md). For multi-component designs with
-   out-of-context mode enabled, each sub-module is synthesized standalone.
+   out-of-context mode enabled, each component is synthesized standalone with a
+   fixed generic script instead — see [Configuration](configuration.md#out-of-context-synthesis).
 
 6. **Place & route** — Runs nextpnr for the selected device and reports timing and utilisation. The target frequency is parsed from Clash-generated SDC files.

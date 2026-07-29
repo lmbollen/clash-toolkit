@@ -50,9 +50,6 @@
             # Hardware synthesis tools
             yosys
 
-            # Graphviz — used by Yosys's `show` command to render SVG schematics
-            graphviz
-
             # FPGA place-and-route tools
             nextpnr  # nextpnr-ice40, nextpnr-ecp5, etc.
 
@@ -76,7 +73,6 @@
             echo "Clash version: $(clash --version 2>/dev/null || echo 'Available via ghcWithClash')"
             echo "HLS: $(haskell-language-server --version 2>/dev/null | head -n1 || echo 'installed')"
             echo "Yosys version: $(yosys -V | head -n1)"
-            echo "Graphviz dot: $(dot -V 2>&1 | head -n1)"
             echo "nextpnr-ecp5: $(nextpnr-ecp5 --version 2>/dev/null | head -n1 || echo 'installed')"
             echo "mdbook version: $(mdbook --version)"
             echo ""

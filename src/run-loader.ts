@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import { ModuleSynthesisResult, SynthesisStatistics } from './yosys-types';
 import { NextpnrResult } from './nextpnr-types';
 import { NextpnrRunner } from './nextpnr-runner';
-import { YosysRunner } from './yosys-runner';
+import { PerModuleHierarchy, YosysRunner } from './yosys-runner';
 
 /**
  * Persisted summary written into each run's `run.json`.  Mirrored here (instead
@@ -50,6 +50,18 @@ export async function readRunMeta(runRoot: string): Promise<RunMetadata | undefi
 
 async function exists(p: string): Promise<boolean> {
     try { await fs.access(p); return true; } catch { return false; }
+}
+
+async function readPerModuleHierarchy(
+    perModuleDir: string,
+): Promise<PerModuleHierarchy | undefined> {
+    try {
+        const raw = await fs.readFile(path.join(perModuleDir, 'hierarchy.json'), 'utf8');
+        const parsed = JSON.parse(raw) as PerModuleHierarchy;
+        return parsed.components ? parsed : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 async function loadStatsIfExists(dir: string): Promise<SynthesisStatistics | undefined> {
@@ -102,6 +114,8 @@ async function loadModuleFromDir(
 ): Promise<ModuleSynthesisResult> {
     const stats = await loadStatsIfExists(moduleDir);
 
+    // `<module>.dot.svg` is a legacy name from the Graphviz era — kept so runs
+    // recorded by older extension versions still open from history.
     const svgCandidates = [
         path.join(moduleDir, `${moduleName}.svg`),
         path.join(moduleDir, `${moduleName}.dot.svg`),
@@ -157,11 +171,22 @@ export async function loadRunModules(
     } catch { /* not per-module mode */ }
 
     if (perModuleEntries.length > 0) {
+        // Written by the per-module pass; absent for runs recorded before it
+        // existed, which then simply show a flat list of components.
+        const hierarchy = await readPerModuleHierarchy(perModuleDir);
         const modules: ModuleSynthesisResult[] = [];
         for (const name of perModuleEntries) {
-            modules.push(await loadModuleFromDir(name, path.join(perModuleDir, name), verilogDir));
+            const module = await loadModuleFromDir(
+                name, path.join(perModuleDir, name), verilogDir
+            );
+            if (hierarchy) {
+                module.subComponents = (hierarchy.components[name] ?? [])
+                    .filter(child => perModuleEntries.includes(child));
+                module.outOfContext = hierarchy.outOfContext;
+            }
+            modules.push(module);
         }
-        return { modules, topModule: meta?.topModule };
+        return { modules, topModule: hierarchy?.top ?? meta?.topModule };
     }
 
     // Whole-design mode — single module

@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import { ModuleSynthesisResult } from './yosys-types';
 import { CriticalPath, NextpnrResult } from './nextpnr-types';
+import { subComponentsOf } from './netlist-diagram';
 
 type SynthTreeNode =
     | ModuleTreeItem
+    | SubComponentItem
     | UtilizationEntry
     | SectionItem
     | KeyValueItem
@@ -55,11 +57,20 @@ export class SynthesisResultsTreeProvider
         return element;
     }
 
-    getChildren(element?: SynthTreeNode): SynthTreeNode[] {
+    async getChildren(element?: SynthTreeNode): Promise<SynthTreeNode[]> {
         if (element instanceof ModuleTreeItem) {
-            return element.fpgaCells.map(
-                ([name, count]) => new UtilizationEntry(name, count)
-            );
+            // Sub-components first — they are navigation; the cell-type
+            // breakdown below them is reference data.
+            return [
+                ...element.childModules,
+                ...await subComponentItems(element.netlistPath, element.subComponents),
+                ...element.fpgaCells.map(
+                    ([name, count]) => new UtilizationEntry(name, count)
+                ),
+            ];
+        }
+        if (element instanceof SubComponentItem) {
+            return subComponentItems(element.netlistPath, element.subComponents);
         }
         if (element instanceof SectionItem) {
             return element.children;
@@ -77,7 +88,23 @@ export class SynthesisResultsTreeProvider
             return [placeholder];
         }
 
-        const roots: SynthTreeNode[] = this.results.map(r => new ModuleTreeItem(r));
+        // Per-module runs carry the component graph, so their rows nest exactly
+        // like a whole-design run's do — synthesizing each component separately
+        // shouldn't flatten how the design is presented.
+        const byName = new Map(this.results.map(r => [r.name, r]));
+        const claimed = new Set(
+            this.results.flatMap(r => (r.subComponents ?? []).filter(n => byName.has(n)))
+        );
+        // Every component being claimed means the graph is cyclic — impossible
+        // for a real design, but fall back to a flat list rather than showing an
+        // empty view if it ever happens.
+        const unclaimed = this.results.filter(r => !claimed.has(r.name));
+        const topLevel = unclaimed.length > 0 ? unclaimed : this.results;
+
+        const roots: SynthTreeNode[] = [];
+        for (const r of topLevel) {
+            roots.push(await this.buildModuleItem(r, byName, new Set()));
+        }
 
         if (this.pnr) {
             const timingSection = buildTimingSection(this.pnr);
@@ -92,20 +119,100 @@ export class SynthesisResultsTreeProvider
 
         return roots;
     }
+
+    /**
+     * Build a module row, recursing into the components it instantiates.
+     *
+     * Two sources of hierarchy, and a module may have either:
+     *   - `subComponents` — components synthesized as their own results (the
+     *     per-module / out-of-context flows). Those become full module rows,
+     *     carrying their own statistics and diagram.
+     *   - the netlist — for a whole-design run, whose sub-modules have no
+     *     separate result and are rendered on demand instead.
+     *
+     * `ancestors` guards against a component graph that (however unlikely)
+     * refers back into itself, which would otherwise recurse forever.
+     */
+    private async buildModuleItem(
+        result: ModuleSynthesisResult,
+        byName: Map<string, ModuleSynthesisResult>,
+        ancestors: Set<string>,
+    ): Promise<ModuleTreeItem> {
+        const children: ModuleTreeItem[] = [];
+        const nextAncestors = new Set(ancestors).add(result.name);
+        for (const name of result.subComponents ?? []) {
+            const child = byName.get(name);
+            if (!child || nextAncestors.has(name)) { continue; }
+            children.push(await this.buildModuleItem(child, byName, nextAncestors));
+        }
+
+        // Only consult the netlist when the run produced no separate results to
+        // nest — otherwise a flattened OOC netlist would contribute nothing and
+        // an unflattened one would duplicate the rows above.
+        const fromNetlist = children.length === 0 && result.diagramJsonPath
+            ? await subComponentsOf(result.diagramJsonPath, result.name)
+            : [];
+
+        return new ModuleTreeItem(result, fromNetlist, children);
+    }
 }
 
 // ── Module item ──────────────────────────────────────────────────────────────
 
+/**
+ * What out-of-context synthesis actually does, stated wherever its results are
+ * shown. Three things make these figures incomparable to a whole-design run, and
+ * all three are visible in the script `runPerModulePass` writes
+ * (`proc; flatten; opt -purge; memory -nomap; opt`):
+ *
+ *   - no technology mapping — no `synth_*` runs, so cells stay generic and the
+ *     user's `synthesisTarget` (and any custom script) has no effect here;
+ *   - `flatten` inlines each component's dependencies, so a component's figures
+ *     include its descendants and per-component numbers overlap;
+ *   - a component never sees the design above it, so nothing is optimized
+ *     against its parent.
+ */
+export const OUT_OF_CONTEXT_NOTE =
+    '**Synthesized out of context** — on its own, with the components it '
+    + 'instantiates flattened into it, and no technology mapping.\n\n'
+    + '- Cells stay generic (`$add`, `$dffe`, …), so the `synthesisTarget` does '
+    + 'not apply to these figures.\n'
+    + '- The figures include this component\'s descendants, so per-component '
+    + 'numbers overlap rather than add up.\n'
+    + '- Yosys never sees the design above this component, so nothing is '
+    + 'optimized against its parent.\n\n'
+    + 'Use them to compare components with each other, not to predict '
+    + 'whole-design utilization.';
+
 export class ModuleTreeItem extends vscode.TreeItem {
     /** Cell types sorted by count descending. */
     readonly fpgaCells: [string, number][];
+    /** Modules this one instantiates, each drillable to its own diagram. */
+    readonly subComponents: string[];
+    /** Netlist the sub-component diagrams are rendered from. */
+    readonly netlistPath?: string;
+    /**
+     * Sub-components that were synthesized as results of their own (per-module
+     * runs), pre-built so the hierarchy can be shown with their statistics.
+     */
+    readonly childModules: ModuleTreeItem[];
 
     constructor(labelOrPlaceholder: string);
-    constructor(result: ModuleSynthesisResult);
-    constructor(arg: string | ModuleSynthesisResult) {
+    constructor(
+        result: ModuleSynthesisResult,
+        subComponents?: string[],
+        childModules?: ModuleTreeItem[],
+    );
+    constructor(
+        arg: string | ModuleSynthesisResult,
+        subComponents: string[] = [],
+        childModules: ModuleTreeItem[] = [],
+    ) {
         if (typeof arg === 'string') {
             super(arg, vscode.TreeItemCollapsibleState.None);
             this.fpgaCells = [];
+            this.subComponents = [];
+            this.childModules = [];
             return;
         }
 
@@ -117,12 +224,15 @@ export class ModuleTreeItem extends vscode.TreeItem {
 
         super(
             r.name,
-            fpgaCells.length > 0
+            fpgaCells.length > 0 || subComponents.length > 0 || childModules.length > 0
                 ? vscode.TreeItemCollapsibleState.Collapsed
                 : vscode.TreeItemCollapsibleState.None
         );
 
         this.fpgaCells = fpgaCells;
+        this.subComponents = subComponents;
+        this.childModules = childModules;
+        this.netlistPath = r.diagramJsonPath;
 
         const cells = r.statistics?.cellCount;
         const wires = r.statistics?.wireCount;
@@ -134,6 +244,9 @@ export class ModuleTreeItem extends vscode.TreeItem {
             if (r.statistics?.logicDepth !== undefined) {
                 parts.push(`depth ${r.statistics.logicDepth}`);
             }
+            // Say so on the row itself: these numbers come from synthesizing
+            // this component alone, which is not what the whole design would do.
+            if (r.outOfContext) { parts.push('out of context'); }
             this.description = parts.join(' · ') || 'OK';
             this.iconPath = new vscode.ThemeIcon(
                 'pass',
@@ -144,7 +257,8 @@ export class ModuleTreeItem extends vscode.TreeItem {
                 : '';
             this.tooltip = new vscode.MarkdownString(
                 `**${r.name}**\n\n` +
-                `Cells: ${cells ?? '—'}  ·  Wires: ${wires ?? '—'}${depthStr}  ·  ${r.elapsedMs} ms`
+                `Cells: ${cells ?? '—'}  ·  Wires: ${wires ?? '—'}${depthStr}  ·  ${r.elapsedMs} ms` +
+                (r.outOfContext ? `\n\n${OUT_OF_CONTEXT_NOTE}` : '')
             );
         } else {
             this.description = r.errors[0]?.message ?? 'failed';
@@ -171,6 +285,64 @@ export class ModuleTreeItem extends vscode.TreeItem {
 
     // Attached by the constructor for modules built from a result.
     result?: ModuleSynthesisResult;
+}
+
+// ── Sub-component items ──────────────────────────────────────────────────────
+
+/**
+ * A module instantiated by the module above it in the tree.
+ *
+ * Clicking one renders (on first open) and shows that component's own diagram,
+ * which is how a hierarchical design is inspected level by level: the parent's
+ * diagram draws sub-components as boxes, and these rows go inside those boxes.
+ *
+ * Nesting is resolved lazily by the provider, so a deep hierarchy costs nothing
+ * until it is expanded.
+ */
+export class SubComponentItem extends vscode.TreeItem {
+    constructor(
+        readonly netlistPath: string,
+        readonly moduleName: string,
+        readonly subComponents: string[],
+    ) {
+        super(
+            moduleName,
+            subComponents.length > 0
+                ? vscode.TreeItemCollapsibleState.Collapsed
+                : vscode.TreeItemCollapsibleState.None
+        );
+        this.iconPath = new vscode.ThemeIcon('symbol-module');
+        this.description = 'component';
+        this.contextValue = 'subComponent-diagram';
+        this.tooltip = new vscode.MarkdownString(
+            `**${moduleName}**\n\nOpen this component's diagram` +
+            (subComponents.length > 0
+                ? `\n\nInstantiates: ${subComponents.join(', ')}`
+                : '')
+        );
+        this.command = {
+            command: 'clash-toolkit.viewComponentDiagram',
+            title: 'View Component Diagram',
+            arguments: [this],
+        };
+    }
+}
+
+/** Build the sub-component rows for a module, resolving one level of nesting. */
+export async function subComponentItems(
+    netlistPath: string | undefined,
+    subComponents: string[],
+): Promise<SubComponentItem[]> {
+    if (!netlistPath) { return []; }
+    const items: SubComponentItem[] = [];
+    for (const name of subComponents) {
+        items.push(new SubComponentItem(
+            netlistPath,
+            name,
+            await subComponentsOf(netlistPath, name),
+        ));
+    }
+    return items;
 }
 
 // ── Utilization child items ──────────────────────────────────────────────────

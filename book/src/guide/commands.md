@@ -19,7 +19,7 @@ menus — and are hidden from the palette.
 
 | Command | Description |
 |---------|-------------|
-| **Clash: Check Toolchain** | Probe every external tool (cabal, Yosys, `dot`, nextpnr) and report what is reachable |
+| **Clash: Check Toolchain** | Probe every external tool (cabal, Yosys, nextpnr) and report what is reachable |
 | **Clash: Install Toolchain** | Pick which EDA tools the extension should download and manage itself |
 
 ## Sidebar
@@ -31,6 +31,7 @@ menus — and are hidden from the palette.
 | **Clash: Open Settings** | Gear icon in all three title bars | Open the settings panel (synthesis target and scripts) |
 | **Clash: Open Synthesized Verilog** | Synthesis Results item, inline icon | Open the Yosys-synthesized Verilog |
 | **Clash: View Module Diagram** | Synthesis Results item, inline icon | Open a module's schematic SVG |
+| **Clash: View Component Diagram** | Click a sub-component row under a module | Open that component's own schematic (rendered on first open) |
 | **Clash: Refresh Run History** | Run History title bar | Re-read past runs from `.clash/` |
 | **Clash: Show Run in Synthesis Results** | Click a Run History item | Load a past run into the results view |
 | **Clash: Open Verilog (History)** | Run History item, inline icon | Open a past run's Verilog |
@@ -63,7 +64,7 @@ Runs the full Clash compilation and Yosys synthesis pipeline without place & rou
 
 Respects the `outOfContext` setting:
 - **disabled (default)** — the whole design is synthesized as a single netlist
-- **enabled** — each component is synthesized standalone, producing its own `.il` (RTLIL), `.json` (netlist), and `.svg` (diagram) plus utilization stats per module
+- **enabled** — each component is synthesized standalone (*out of context*), producing its own `.il` (RTLIL), `.json` (netlist), and `.svg` (diagram) plus per-component stats. This path runs a fixed generic script with no technology mapping, so the target does not apply, a component's figures include its descendants, and nothing is optimized against its parent — see [Configuration](configuration.md#out-of-context-synthesis)
 
 Elaboration (`Clash: Elaborate`) always runs per-module regardless of this setting — its goal is to give a faithful per-component view of what Clash produced.
 

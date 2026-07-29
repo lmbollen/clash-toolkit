@@ -638,9 +638,17 @@ export class SynthesisSettingsPanel {
     Out-of-context synthesis
   </label>
   <div class="description">
-    When enabled, multi-component designs are synthesized one module at a time
-    so each module gets its own utilization stats and circuit diagram.
-    When disabled, the whole design is synthesized as a single netlist.
+    When enabled, multi-component designs are synthesized one component at a
+    time, so each gets its own utilization stats and circuit diagram. Each
+    component is synthesized on its own, with the components it instantiates
+    flattened into it and <strong>no technology mapping</strong>
+    (<code>proc</code>, <code>flatten</code>, <code>opt</code>,
+    <code>memory -nomap</code>). The target and script below therefore do not
+    apply to those results: cells stay generic, a component's figures include
+    its descendants, and nothing is optimized against its parent. Use them to
+    compare components with each other, not to predict whole-design
+    utilization. When disabled, the whole design is synthesized as a single
+    netlist with the selected target.
   </div>
 </div>
 

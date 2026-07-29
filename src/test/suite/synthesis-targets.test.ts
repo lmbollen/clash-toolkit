@@ -14,6 +14,7 @@ import {
 } from '../../synthesis-targets';
 import { YosysRunner } from '../../yosys-runner';
 import { YosysOptions } from '../../yosys-types';
+import { waitForSvg } from '../../netlist-diagram';
 
 // ── Target registry ─────────────────────────────────────────────────────────
 
@@ -63,6 +64,22 @@ suite('Synthesis Targets — registry', () => {
 					`${id} default script missing placeholder ${ph}`
 				);
 			}
+		}
+	});
+
+	test('default scripts write a JSON netlist and no Graphviz output', () => {
+		// The diagram is rendered from the JSON netlist by netlistsvg, so
+		// `write_json` is load-bearing for schematics and Yosys's `show` is not
+		// used at all any more.
+		for (const [id, target] of SYNTHESIS_TARGETS) {
+			assert.ok(
+				target.defaultScript.includes('write_json "{outputDir}/{outputBaseName}.json"'),
+				`${id} default script must write the JSON netlist the diagram is rendered from`
+			);
+			assert.ok(
+				!target.defaultScript.includes('show'),
+				`${id} default script should not invoke Yosys \`show\``
+			);
 		}
 	});
 
@@ -339,6 +356,17 @@ suite('Synthesis Targets — installed Yosys supports every offered target', () 
 			assert.ok(result.jsonPath, `Target "${targetId}" produced no JSON netlist`);
 			const stat = await fs.stat(result.jsonPath!);
 			assert.ok(stat.size > 0, `Target "${targetId}" produced an empty netlist`);
+
+			// netlistsvg must cope with every target's technology-mapped
+			// netlist — a target whose cells it cannot draw would silently
+			// produce runs without diagrams.
+			assert.ok(result.svgPath, `Target "${targetId}" reported no diagram path`);
+			assert.ok(
+				await waitForSvg(result.svgPath!),
+				`Target "${targetId}" rendered no diagram at ${result.svgPath}`
+			);
+			const svg = await fs.readFile(result.svgPath!, 'utf8');
+			assert.ok(svg.startsWith('<svg'), `Target "${targetId}" diagram is not an SVG`);
 		});
 	}
 });

@@ -27,6 +27,10 @@ src/
   toolchain.ts              External tool availability checking
   tool-provider.ts          Managed OSS CAD Suite download and path resolution
 
+  ── Diagrams ──
+  netlist-renderer.ts       netlistsvg rendering; also the child-process entry point
+  netlist-diagram.ts        Render orchestration, component hierarchy queries
+
   ── UI ──
   haskell-functions-tree.ts Haskell Functions view
   synthesis-results-tree.ts Synthesis Results view
@@ -86,6 +90,7 @@ User Code (.hs)
        ▼
   YosysRunner (synthesis script → netlist JSON)
        │
+       ├──────────────▶ netlist-diagram → netlistsvg (netlist JSON → SVG)
        ▼
   NextpnrRunner (PnR → timing)
 ```

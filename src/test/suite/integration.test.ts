@@ -9,6 +9,7 @@ import { NextpnrRunner } from '../../nextpnr-runner';
 import { ClashManifestParser } from '../../clash-manifest-parser';
 import { FunctionInfo } from '../../types';
 import { getDefaultElaborationScript } from '../../synthesis-targets';
+import { ensureSubDiagram, subComponentsOf, waitForSvg } from '../../netlist-diagram';
 
 
 /**
@@ -238,6 +239,30 @@ suite('Integration: Full Synthesis + PnR Flow', () => {
 				`Elaborated netlist should not contain tech-mapped cell "${t}"`
 			);
 		}
+
+		// netlistsvg renders that same netlist into the schematic the Elaborate
+		// command opens.
+		assert.ok(result.svgPath, 'Elaboration should report a diagram path');
+		assert.ok(
+			await waitForSvg(result.svgPath!),
+			`Elaboration rendered no diagram at ${result.svgPath}`
+		);
+		const svg = await fs.readFile(result.svgPath!, 'utf8');
+		assert.ok(svg.startsWith('<svg'), 'Elaboration diagram should be an SVG');
+
+		// Elaboration keeps the hierarchy, so the top module's sub-components
+		// must be offered for drill-down and be renderable on demand. This is
+		// the whole-design path — no out-of-context synthesis involved.
+		const subs = await subComponentsOf(result.jsonPath!, topModule);
+		if (subs.length > 0) {
+			const child = subs[0];
+			const childSvg = await ensureSubDiagram(result.jsonPath!, child, outputChannel);
+			assert.ok(childSvg, `No diagram rendered for sub-component ${child}`);
+			assert.ok(
+				(await fs.readFile(childSvg!, 'utf8')).startsWith('<svg'),
+				`${child} diagram should be an SVG`
+			);
+		}
 	});
 
 	// ---------------------------------------------------------------
@@ -362,7 +387,52 @@ suite('Integration: Full Synthesis + PnR Flow', () => {
 				const json = JSON.parse(content);
 				assert.ok(json, `${mr.name} diagram JSON should be parseable`);
 			}
+
+			// Every module gets its own netlistsvg diagram, rendered from that
+			// module's netlist.
+			assert.ok(mr.svgPath, `${mr.name} should report a diagram path`);
+			assert.ok(
+				await waitForSvg(mr.svgPath!),
+				`${mr.name} rendered no diagram at ${mr.svgPath}`
+			);
+			const svg = await fs.readFile(mr.svgPath!, 'utf8');
+			assert.ok(svg.startsWith('<svg'), `${mr.name} diagram should be an SVG`);
+
+			// Out-of-context is what this flow does, and the results must say so
+			// — the figures above exclude cross-boundary optimization.
+			assert.strictEqual(
+				mr.outOfContext, true,
+				`${mr.name} should be marked as synthesized out of context`
+			);
+			assert.ok(
+				Array.isArray(mr.subComponents),
+				`${mr.name} should record its component graph`
+			);
 		}
+
+		// The graph is persisted so Run History can rebuild the same nesting
+		// from a flattened per-module run.
+		const hierarchyPath = path.join(
+			projectDirs.yosys, 'per-module', 'hierarchy.json'
+		);
+		const hierarchy = JSON.parse(await fs.readFile(hierarchyPath, 'utf8')) as {
+			top: string;
+			outOfContext: boolean;
+			components: Record<string, string[]>;
+		};
+		assert.strictEqual(hierarchy.top, topModule);
+		assert.strictEqual(hierarchy.outOfContext, true);
+		assert.deepStrictEqual(
+			Object.keys(hierarchy.components).sort(),
+			result.moduleResults!.map(m => m.name).sort(),
+			'every synthesized component should appear in the graph'
+		);
+		// The top must instantiate something, or this design would not exercise
+		// hierarchical presentation at all.
+		assert.ok(
+			(hierarchy.components[topModule] ?? []).length > 0,
+			`${topModule} should instantiate at least one component`
+		);
 	});
 
 	// ---------------------------------------------------------------

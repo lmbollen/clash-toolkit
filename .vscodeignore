@@ -40,6 +40,23 @@ node_modules/**/*.d.ts
 node_modules/**/*.d.ts.map
 node_modules/.bin/**
 
+# Diagram renderer: ship only what node actually loads. netlistsvg's browser
+# bundle and its TypeScript sources are dead weight (we require built/index.js),
+# and elkjs loads lib/main.js → elk-api.js → elk-worker.min.js, so its browser
+# bundle and unminified worker are never read. Keep netlistsvg/lib/*.svg — those
+# are the gate skins the renderer draws with.
+node_modules/netlistsvg/built/netlistsvg.bundle.js
+node_modules/netlistsvg/lib/*.ts
+node_modules/netlistsvg/demo/**
+node_modules/netlistsvg/examples/**
+node_modules/netlistsvg/test/**
+# netlistsvg's own CLI and the deps only it pulls in (yargs, json5, fs-extra).
+# We call the library, never the command line.
+node_modules/netlistsvg/bin/**
+node_modules/netlistsvg/node_modules/**
+node_modules/elkjs/lib/elk.bundled.js
+node_modules/elkjs/lib/elk-worker.js
+
 # Repo metadata not needed at runtime
 .gitignore
 .editorconfig

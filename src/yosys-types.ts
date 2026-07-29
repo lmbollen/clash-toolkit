@@ -44,7 +44,7 @@ export interface YosysSynthesisResult {
 	/** Path to the JSON netlist output */
 	jsonPath?: string;
 
-	/** Path to the rendered SVG diagram (Graphviz) */
+	/** Path to the rendered SVG diagram (netlistsvg) */
 	svgPath?: string;
 
 	/** Synthesis statistics */
@@ -77,8 +77,23 @@ export interface ModuleSynthesisResult {
 	rtlilPath?: string;
 	/** Path to the per-module JSON netlist (per-module mode) */
 	diagramJsonPath?: string;
-	/** Path to the rendered SVG diagram (Graphviz) for this module */
+	/** Path to the rendered SVG diagram (netlistsvg) for this module */
 	svgPath?: string;
+	/**
+	 * Names of the components this module instantiates directly.
+	 *
+	 * Recorded for out-of-context runs, where each component is synthesized
+	 * standalone and its netlist is flattened — the hierarchy is no longer
+	 * recoverable from the netlist itself, so it comes from the Clash manifest's
+	 * dependency graph instead.
+	 */
+	subComponents?: string[];
+	/**
+	 * True when this module was synthesized out of context: on its own, with no
+	 * visibility of its parent. Its statistics therefore exclude any
+	 * optimization across the component boundary.
+	 */
+	outOfContext?: boolean;
 	/** Clash-compiled Verilog source files for this module */
 	verilogFiles?: string[];
 	/** Synthesis time in milliseconds */

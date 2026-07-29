@@ -55,13 +55,9 @@ delete */t:$specify2 */t:$specify3
 opt_clean
 clean
 
-# Write JSON netlist (for downstream tools)
+# Write JSON netlist — consumed by downstream tools and by netlistsvg, which
+# the extension runs afterwards to render the schematic diagram.
 write_json "{outputDir}/{outputBaseName}.json"
-
-# Render diagram via Graphviz (dot is invoked separately by the extension)
-# NOTE: -prefix must stay unquoted — yosys's show takes the token verbatim,
-# so quotes would become part of the .dot filename.
-show -format dot -prefix {outputDir}/{outputBaseName} -viewer none -notitle
 `;
 }
 
@@ -100,13 +96,9 @@ delete */t:$specify2 */t:$specify3
 opt_clean
 clean
 
-# Write JSON netlist (for downstream tools)
+# Write JSON netlist — consumed by downstream tools and by netlistsvg, which
+# the extension runs afterwards to render the schematic diagram.
 write_json "{outputDir}/{outputBaseName}.json"
-
-# Render diagram via Graphviz (dot is invoked separately by the extension)
-# NOTE: -prefix must stay unquoted — yosys's show takes the token verbatim,
-# so quotes would become part of the .dot filename.
-show -format dot -prefix {outputDir}/{outputBaseName} -viewer none -notitle
 `;
 
 const ELABORATION_SCRIPT = `# Read design files
@@ -130,13 +122,9 @@ tee -o "{outputDir}/logic_depth.txt" ltp -noff
 
 clean
 
-# Write JSON netlist (for downstream tools)
+# Write JSON netlist — consumed by downstream tools and by netlistsvg, which
+# the extension runs afterwards to render the schematic diagram.
 write_json "{outputDir}/{outputBaseName}.json"
-
-# Render diagram via Graphviz (dot is invoked separately by the extension)
-# NOTE: -prefix must stay unquoted — yosys's show takes the token verbatim,
-# so quotes would become part of the .dot filename.
-show -format dot -prefix {outputDir}/{outputBaseName} -viewer none -notitle
 `;
 
 // ---------------------------------------------------------------------------

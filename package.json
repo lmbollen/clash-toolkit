@@ -104,6 +104,11 @@
         "icon": "$(open-preview)"
       },
       {
+        "command": "clash-toolkit.viewComponentDiagram",
+        "title": "Clash: View Component Diagram",
+        "icon": "$(open-preview)"
+      },
+      {
         "command": "clash-toolkit.goToFunction",
         "title": "Clash: Go To Function"
       },
@@ -146,6 +151,10 @@
       "commandPalette": [
         {
           "command": "clash-toolkit.goToFunction",
+          "when": "false"
+        },
+        {
+          "command": "clash-toolkit.viewComponentDiagram",
           "when": "false"
         },
         {
@@ -259,7 +268,7 @@
         "clash-toolkit.outOfContext": {
           "type": "boolean",
           "default": false,
-          "description": "Out-of-context synthesis: when enabled, multi-component designs are synthesized one module at a time so each gets its own utilization stats and circuit diagram. When disabled, the whole design is synthesized as a single netlist."
+          "description": "Out-of-context synthesis: when enabled, multi-component designs are synthesized one component at a time so each gets its own utilization stats and circuit diagram. Each component is synthesized on its own with the components it instantiates flattened into it, using generic optimization only (proc, flatten, opt, memory -nomap) — there is no technology mapping, so synthesisTarget and any custom synthesis script do not apply, cells stay generic, a component's figures include its descendants, and nothing is optimized against its parent. Use them to compare components with each other, not to predict whole-design utilization. When disabled, the whole design is synthesized as a single netlist with the selected target."
         },
         "clash-toolkit.pnrTargetFrequencyMHz": {
           "type": [
@@ -361,6 +370,7 @@
     "publish": "vsce publish"
   },
   "dependencies": {
+    "netlistsvg": "^1.0.2",
     "tar": "^7.4.3"
   },
   "devDependencies": {

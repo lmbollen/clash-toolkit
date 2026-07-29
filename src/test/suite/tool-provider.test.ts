@@ -36,7 +36,6 @@ suite('ManagedToolchain Test Suite', () => {
 
 	test('canProvide recognises the bundled tools', () => {
 		assert.strictEqual(toolchain.canProvide('yosys'), true);
-		assert.strictEqual(toolchain.canProvide('dot'), true);
 		assert.strictEqual(toolchain.canProvide('nextpnr-ecp5'), true);
 		assert.strictEqual(toolchain.canProvide('nextpnr-ice40'), true);
 		assert.strictEqual(toolchain.canProvide('nextpnr-himbaechel'), true);
@@ -46,6 +45,9 @@ suite('ManagedToolchain Test Suite', () => {
 		// cabal/ghc are Haskell tooling, not part of the OSS CAD Suite.
 		assert.strictEqual(toolchain.canProvide('cabal'), false);
 		assert.strictEqual(toolchain.canProvide('ghc'), false);
+		// Diagrams are rendered by the bundled netlistsvg library, so Graphviz
+		// is no longer a tool the extension provides or needs.
+		assert.strictEqual(toolchain.canProvide('dot'), false);
 	});
 
 	test('is not installed against a throwaway storage dir', () => {

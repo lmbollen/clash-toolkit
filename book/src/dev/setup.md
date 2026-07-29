@@ -9,7 +9,6 @@ The project uses [Nix](https://nixos.org/) to provide a reproducible development
 - **Cabal** for building the test Haskell project
 - **Haskell Language Server** (HLS)
 - **Yosys** for logic synthesis
-- **Graphviz** for rendering schematic diagrams
 - **nextpnr** for place & route (ice40, ecp5, …)
 - **mdbook** for building this book
 

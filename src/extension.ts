@@ -5,7 +5,8 @@ import { FunctionDetector } from './function-detector';
 import { CodeGenerator, GenerationConfig, ProjectDirectories } from './code-generator';
 import { promises as fsp } from 'fs';
 import { ClashCompiler, ClashCompilationResult } from './clash-compiler';
-import { YosysRunner, waitForSvg } from './yosys-runner';
+import { YosysRunner } from './yosys-runner';
+import { ensureSubDiagram, waitForSvg } from './netlist-diagram';
 import { NextpnrRunner } from './nextpnr-runner';
 import { ECP5Device, ECP5Package, PNR_FAMILIES } from './nextpnr-types';
 import { FunctionInfo } from './types';
@@ -26,23 +27,23 @@ let outputChannel: vscode.OutputChannel;
 
 /**
  * Open a rendered SVG diagram in VS Code's built-in image preview editor.
- * If `svgPath` is undefined (e.g. dot isn't installed), shows a helpful message
- * instead of failing silently.
+ * If `svgPath` is undefined (e.g. the run produced no netlist), shows a helpful
+ * message instead of failing silently.
  */
 async function openSvgPreview(svgPath?: string): Promise<void> {
 	if (!svgPath) {
 		vscode.window.showWarningMessage(
-			'No diagram rendered — install Graphviz (`dot`) to enable schematic output.'
+			'No diagram for this module — the run produced no JSON netlist to render.'
 		);
 		return;
 	}
-	// `dot` is fire-and-forget during synthesis so it doesn't stall the
-	// pipeline; here is where we actually need the file, so wait for any
-	// in-flight conversion to finish.
+	// Diagram rendering is fire-and-forget during synthesis so it doesn't stall
+	// the pipeline; here is where we actually need the file, so wait for any
+	// in-flight render to finish.
 	const ready = await waitForSvg(svgPath);
 	if (!ready) {
 		vscode.window.showWarningMessage(
-			'Diagram not available — Graphviz `dot` may have failed. Check the output channel for details.'
+			'Diagram not available — rendering it failed. Check the output channel for details.'
 		);
 		return;
 	}
@@ -69,7 +70,13 @@ function showSynthesisResults(
 ): void {
 	synthesisTreeProvider.refresh(modules, pnr);
 	if (synthesisResultsView) {
-		synthesisResultsView.message = message;
+		// Derived from the results rather than passed in, so a run loaded from
+		// history is labelled the same way a fresh one is.
+		const ooc = modules.some(m => m.outOfContext);
+		synthesisResultsView.message = ooc
+			? `${message} · out-of-context: each component synthesized on its own, ` +
+				'generic cells only — not comparable with a whole-design run'
+			: message;
 	}
 }
 
@@ -131,7 +138,7 @@ export function activate(context: vscode.ExtensionContext) {
 	yosysRunner = new YosysRunner(outputChannel);
 	nextpnrRunner = new NextpnrRunner(outputChannel);
 	// Managed toolchain: lets the extension download and use its own copies of
-	// yosys/nextpnr/dot when they aren't on the user's PATH.
+	// yosys/nextpnr when they aren't on the user's PATH.
 	initializeToolProvider(context, outputChannel);
 	toolchain = new ToolchainChecker(outputChannel);
 
@@ -229,7 +236,7 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	// Command: open the rendered SVG diagram for a specific module
-	// (inline tree action). Falls back gracefully when dot isn't installed.
+	// (inline tree action). Falls back gracefully when no diagram was rendered.
 	context.subscriptions.push(
 		vscode.commands.registerCommand('clash-toolkit.viewModuleDiagram', (item) => {
 			openSvgPreview(item?.result?.svgPath);
@@ -267,6 +274,34 @@ export function activate(context: vscode.ExtensionContext) {
 			const svgPath: string | undefined =
 				item instanceof RunModuleNode ? item.svgPath : undefined;
 			openSvgPreview(svgPath);
+	// Command: open the diagram of a sub-component (a module instantiated by
+	// the one above it in the tree). Unlike the top-level diagram, this one is
+	// rendered on first open rather than during synthesis — there is no point
+	// laying out every module of a design nobody has asked to see.
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			'clash-toolkit.viewComponentDiagram',
+			async (item?: { netlistPath?: string; moduleName?: string }) => {
+				if (!item?.netlistPath || !item.moduleName) { return; }
+				const svgPath = await vscode.window.withProgress(
+					{
+						location: vscode.ProgressLocation.Window,
+						title: `Rendering diagram for ${item.moduleName}…`,
+					},
+					() => ensureSubDiagram(item.netlistPath!, item.moduleName!, outputChannel)
+				);
+				if (!svgPath) {
+					vscode.window.showWarningMessage(
+						`Could not render a diagram for ${item.moduleName}. ` +
+						'Check the output channel for details.'
+					);
+					return;
+				}
+				await openSvgPreview(svgPath);
+			}
+		)
+	);
+
 		})
 	);
 
@@ -492,7 +527,7 @@ function registerCommands(context: vscode.ExtensionContext) {
 		})
 	);
 
-	// Download/manage the bundled toolchain (yosys, nextpnr, Graphviz) so the
+	// Download/manage the bundled toolchain (yosys, nextpnr) so the
 	// extension can run without those tools on the user's PATH.
 	context.subscriptions.push(
 		vscode.commands.registerCommand('clash-toolkit.installToolchain', async () => {
@@ -720,7 +755,29 @@ async function runYosynsSynthesis(
 	progress.report({ message: `${stageLabel} with Yosys…`, increment: 40 });
 	outputChannel.appendLine(`\n=== Step 3: ${stageLabel} with Yosys ===`);
 	if (flow === 'synthesize') {
-		outputChannel.appendLine(`Mode: ${outOfContext ? 'out-of-context (per-module)' : 'whole-design'}`);
+		outputChannel.appendLine(`Mode: ${outOfContext ? 'out-of-context (per-component)' : 'whole-design'}`);
+		if (outOfContext) {
+			// Be explicit about what this mode does, because it is not simply
+			// "the same synthesis, per component": no synth_* runs at all.
+			outputChannel.appendLine(
+				'  Each component is synthesized on its own, with the components it'
+			);
+			outputChannel.appendLine(
+				'  instantiates flattened into it, using generic optimization only'
+			);
+			outputChannel.appendLine(
+				'  (proc, flatten, opt, memory -nomap) — no technology mapping, so the'
+			);
+			outputChannel.appendLine(
+				'  target below and any custom script do not apply to these figures,'
+			);
+			outputChannel.appendLine(
+				'  which overlap between parent and child and are not comparable with'
+			);
+			outputChannel.appendLine(
+				'  a whole-design run.'
+			);
+		}
 	}
 	outputChannel.appendLine(`Target: ${targetFamily}`);
 
