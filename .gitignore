@@ -1,4 +1,5 @@
 out
+book/book
 node_modules
 .vscode-test/
 *.vsix

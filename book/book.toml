@@ -1,6 +1,6 @@
 [book]
 title = "Clash Toolkit"
-authors = ["clash-lang"]
+authors = ["Lucas Bollen", "Claude"]
 language = "en"
 src = "src"
 

@@ -57,6 +57,9 @@
             nextpnr  # nextpnr-ice40, nextpnr-ecp5, etc.
 
 
+            # Documentation — builds the book/ directory
+            mdbook
+
             # Useful utilities
             git
           ];
@@ -75,6 +78,7 @@
             echo "Yosys version: $(yosys -V | head -n1)"
             echo "Graphviz dot: $(dot -V 2>&1 | head -n1)"
             echo "nextpnr-ecp5: $(nextpnr-ecp5 --version 2>/dev/null | head -n1 || echo 'installed')"
+            echo "mdbook version: $(mdbook --version)"
             echo ""
             echo "Extension Development:"
             echo "  1. Run 'npm install' to install dependencies"
