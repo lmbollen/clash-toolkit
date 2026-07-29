@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-29
+
 ### Fixed
 - The published extension no longer contains `.clash/` — the debug logs and
   synthesis output the extension writes into the workspace while developing.
