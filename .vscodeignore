@@ -57,6 +57,12 @@ node_modules/netlistsvg/node_modules/**
 node_modules/elkjs/lib/elk.bundled.js
 node_modules/elkjs/lib/elk-worker.js
 
+# Extension runtime state written into the repo while developing: debug logs and
+# synthesis runs. Untracked (see .gitignore) but vsce reads only this file, so it
+# has to be excluded here too — 0.3.0 shipped .clash/debug.log.
+.clash/**
+*.log
+
 # Repo metadata not needed at runtime
 .gitignore
 .editorconfig

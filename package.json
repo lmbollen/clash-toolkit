@@ -362,7 +362,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && node scripts/verify-package.js",
     "clean": "rm -rf out",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
@@ -370,6 +370,7 @@
     "lint": "eslint src",
     "test": "node ./out/test/runTest.js",
     "test:unit": "echo 'Unit tests require running in VS Code test environment. Use F5 with Extension Tests configuration.'",
+    "verify:package": "node scripts/verify-package.js",
     "package": "vsce package",
     "publish": "vsce publish"
   },

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The published extension no longer contains `.clash/` — the debug logs and
+  synthesis output the extension writes into the workspace while developing.
+  `vsce` reads only `.vscodeignore`, never `.gitignore`, so being untracked was
+  not enough: 0.3.0 shipped `.clash/debug.log` with absolute paths from the
+  machine that built it. `scripts/verify-package.js` now checks the packaged file
+  list from `vscode:prepublish`, which gates `vsce package` and a bare
+  `npx vsce publish` alike, and fails if anything on its deny list would ship or
+  anything the extension needs at runtime is missing.
+
 ## [0.3.0] - 2026-07-29
 
 Schematics no longer need an external tool, hierarchical designs can be inspected
