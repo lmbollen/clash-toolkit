@@ -6,3 +6,5 @@ src = "src"
 
 [output.html]
 git-repository-url = "https://github.com/lmbollen/clash-toolkit"
+# Served from a project Pages site, so the 404 page needs the sub-path.
+site-url = "/clash-toolkit/"

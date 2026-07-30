@@ -1,5 +1,7 @@
 # Clash Toolkit
 
+[![Documentation](https://github.com/lmbollen/clash-toolkit/actions/workflows/docs.yml/badge.svg)](https://lmbollen.github.io/clash-toolkit/)
+
 > **Community extension** — maintained by [Lucas Bollen](https://github.com/lmbollen) (QBayLogic). Not an official release of the [Clash](https://clash-lang.org/) project.
 
 Synthesize Verilog from Haskell functions using [Clash](https://clash-lang.org/), explore the result with [Yosys](https://yosyshq.net/yosys/), and place-and-route for ECP5, iCE40, and Gowin FPGAs with [nextpnr](https://github.com/YosysHQ/nextpnr) — all from inside VS Code.
@@ -25,10 +27,13 @@ on your PATH is always used in preference to the managed copy.
 
 ## Documentation
 
-Full documentation is in the **[book/](book/)** directory (built with [mdbook](https://rust-lang.github.io/mdBook/)):
+Full documentation is published at
+**[lmbollen.github.io/clash-toolkit](https://lmbollen.github.io/clash-toolkit/)**,
+built from the **[book/](book/)** directory with
+[mdbook](https://rust-lang.github.io/mdBook/). To read it locally:
 
 ```bash
-cd book && mdbook serve   # http://localhost:3000
+mdbook serve book   # http://localhost:3000
 ```
 
 Highlights:

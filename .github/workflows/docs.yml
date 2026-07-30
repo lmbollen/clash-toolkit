@@ -1,0 +1,64 @@
+name: Documentation
+
+# The book is the documentation, so a change that breaks it should fail like any
+# other broken build. Pushes to the default branch also publish it to GitHub
+# Pages, which is where the README's documentation badge points.
+#
+# Publishing requires the repository's Pages source to be set to "GitHub Actions"
+# (Settings → Pages); until then the build runs and the deploy step fails.
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+# Let the deployment replace an in-flight one rather than queueing behind it.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned so CI and the Nix dev shell render with the same mdbook.
+  MDBOOK_VERSION: v0.5.2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mdbook ${{ env.MDBOOK_VERSION }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/mdbook"
+          curl -sSfL \
+            "https://github.com/rust-lang/mdBook/releases/download/${MDBOOK_VERSION}/mdbook-${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP/mdbook"
+          echo "$RUNNER_TEMP/mdbook" >> "$GITHUB_PATH"
+
+      - run: mdbook build book
+
+      # Available on pull requests too, so a docs change can be previewed
+      # without waiting for it to land.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: book
+          path: book/book
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name == 'push'
+        with:
+          path: book/book
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write      # deploy to Pages
+      id-token: write   # verify the deployment's origin
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
