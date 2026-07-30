@@ -29,6 +29,14 @@
         ]);
       in
       {
+        # Documentation-only shell, so CI can build the book from this flake —
+        # one definition of the mdbook version, instead of a pin here and another
+        # in the workflow that can drift. Kept separate from `default` because
+        # that shell drags in GHC with Clash, which a docs build has no use for.
+        devShells.docs = pkgs.mkShell {
+          buildInputs = [ pkgs.mdbook ];
+        };
+
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             # Node.js and npm for extension development
