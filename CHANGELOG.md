@@ -5,7 +5,98 @@ All notable changes to **Clash Toolkit** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-07-31
+
+The sidebar is one view instead of three, cabal builds in parallel, and the
+numbers place & route is judged against now come from the design itself rather
+than a setting.
+
+### Added
+- **cabal builds in parallel.** The Clash invocation now passes `--jobs`, which
+  defaults to one job per core (`cabalJobs: auto`), so a project whose
+  dependencies are not built yet no longer compiles them one package at a time on
+  a single core. Set `clash-toolkit.cabalJobs` to a number to cap it, or to `1`
+  for the old sequential behaviour; changing it never invalidates cabal's
+  existing build products. The new `clash-toolkit.ghcJobs` additionally passes
+  `-jN` to GHC for parallel *module* compilation inside a single package — off by
+  default, because GHC options are part of cabal's build plan and toggling it
+  rebuilds the plan once.
+- **An offer to gitignore `.clash/`.** The extension writes generated Verilog,
+  netlists and run history into the workspace, so on activation it asks once
+  whether to add `.clash/` to an existing `.gitignore`. **Yes** appends it under a
+  comment saying what it is, **No** is remembered, and **Not right now** records
+  nothing so the question returns next session. Nothing is asked when the
+  workspace has no `.gitignore` — one is never created — or when the file already
+  mentions `.clash`, including an explicit `!.clash` un-ignore. The answer is
+  stored per workspace, since it is about that repository.
+- **Delete a design's history, or all of it.** The History section's header
+  carries a trash icon that clears every design's runs, and each design row one
+  that deletes just its own. Both name what they are about to remove and take the
+  directories with them; `.clash/synth-project/` is left alone, being the
+  generated cabal project rather than run output.
+- **Clash: Refresh** — one title-bar button that re-reads both the active file's
+  functions and the runs on disk. The two per-section refresh commands remain in
+  the command palette.
+- `clash-toolkit.toolCommands` — per-tool command overrides, keyed by tool name
+  (`cabal`, `yosys`, `nextpnr-ecp5`, `nextpnr-ice40`, `nextpnr-himbaechel`). Only
+  yosys could be pointed elsewhere before, though place & route needs its nextpnr
+  binary just as much and cabal was hardcoded outright. A value may carry a
+  wrapper (`nix run nixpkgs#yosys --`, `wsl yosys`), which is the case neither
+  PATH detection nor the managed download can cover. The same command is used for
+  the pre-flight probe and the run itself.
+
+### Changed
+- **The sidebar is one view instead of three.** Haskell Functions, Synthesis
+  Results and Run History are now the **Functions**, **Results** and **History**
+  sections of a single tree, so there is one title bar and one thing to size and
+  scroll rather than three that had to be managed separately. Each section still
+  has its own provider and collapses independently, and each header shows what
+  that section is currently reporting — the file whose functions are listed, the
+  run loaded into Results, or why HLS has nothing to say — which is what the
+  per-view banners used to do.
+- **The place & route target frequency now always comes from the design**: the
+  period of the clock domain the top entity's clock port declares, read from the
+  Clash manifest on every run. A design with no clocked domain gets no `--freq`,
+  so nextpnr reports an unconstrained Fmax rather than a verdict about a
+  constraint the design never had, and a design driven by clocks in two domains
+  stops place & route with both named — one `--freq` covers the whole design and
+  cannot be met by both.
+- **Diagrams open as preview tabs.** Opening one component's diagram after
+  another replaces what is on screen instead of leaving a tab behind for each,
+  which is what walking a hierarchy does. Pin a tab (or double-click it) to keep
+  that diagram and have the next one open alongside it.
+- **The settings page is grouped.** `contributes.configuration` is now five
+  ordered categories — Synthesis, Place & Route, Build, Toolchain, Yosys Scripts
+  — instead of one flat list with the eight multiline script boxes in the middle
+  of it. Setting ids are unchanged, so nothing needs migrating.
+
+### Deprecated
+- `clash-toolkit.yosysCommand`, superseded by `clash-toolkit.toolCommands` with
+  the key `yosys`. Still honoured, so an existing configuration keeps working.
+
+### Removed
+- `clash-toolkit.pnrTargetFrequencyMHz`. A workspace-global number cannot be
+  right for two top entities that run at different frequencies, and the manifest
+  already states both. A value left in `settings.json` is ignored.
+- The view ids `clash-toolkit.haskellFunctions`, `clash-toolkit.synthesisResults`
+  and `clash-toolkit.runHistory`, replaced by the single
+  `clash-toolkit.explorer`. Anything referring to the old ids — a custom
+  keybinding, a saved layout — needs the new one.
+
+### Fixed
+- **Past runs offer their Verilog again.** Clash writes a directory per component
+  under `02-verilog/`, and the history loader listed only the top of that
+  directory — where there are no `.v` files, just directories. Every per-module
+  run (which is every elaboration, and out-of-context synthesis) therefore
+  recorded no Verilog and showed no icon to open it with. Each component now
+  resolves to the Verilog Clash generated for it.
+- **The target frequency was read from the wrong clock domain.** A manifest lists
+  every domain the design *mentions*, and the parser picked `System` by name when
+  present — on the bundled test project, reporting 100 MHz for a design clocked at
+  50. Each of the top entity's clock ports is now paired with the domain that port
+  declares, and nothing is inferred around a gap: a clock with no domain, a domain
+  the manifest never defines, or a domain without a usable period is rejected when
+  the manifest is parsed.
 
 ## [0.3.1] - 2026-07-29
 
