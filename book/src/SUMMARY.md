@@ -28,3 +28,4 @@
 - [Testing](./dev/testing.md)
 - [Debugging](./dev/debugging.md)
 - [Known Warnings](./dev/known-warnings.md)
+- [Releasing](./dev/releasing.md)
