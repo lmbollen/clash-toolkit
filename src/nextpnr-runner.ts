@@ -14,6 +14,7 @@ import {
 	PNR_FAMILIES
 } from './nextpnr-types';
 import { getLogger } from './file-logger';
+import { toolInvocation } from './toolchain';
 import { resolveTool, toolSpawnEnv } from './tool-provider';
 
 /**
@@ -74,13 +75,17 @@ export class NextpnrRunner {
 			reportJsonPath,
 			routedSvgPath,
 		});
-		const executable = NextpnrRunner.getExecutable(options.family);
+		// The user may point this family's binary somewhere else, or put a
+		// wrapper in front of it; those leading args go before ours.
+		const { command, args: wrapperArgs } =
+			toolInvocation(NextpnrRunner.getExecutable(options.family));
+		const fullArgs = [...wrapperArgs, ...args];
 
-		this.outputChannel.appendLine(`\nRunning: ${executable} ${args.join(' ')}`);
+		this.outputChannel.appendLine(`\nRunning: ${command} ${fullArgs.join(' ')}`);
 		this.outputChannel.appendLine('');
 
 		// Run nextpnr
-		const nextpnrResult = await this.runNextpnr(executable, args, options, {
+		const nextpnrResult = await this.runNextpnr(command, fullArgs, options, {
 			reportJsonPath,
 			routedSvgPath,
 		});
@@ -167,10 +172,12 @@ export class NextpnrRunner {
 			: ['--device', device];
 
 		try {
+			const { command, args: wrapperArgs } = toolInvocation(binary);
 			const probes = candidates.map(pkg =>
 				new Promise<{ pkg: string; ok: boolean }>(resolve => {
-					const resolvedBinary = resolveTool(binary);
+					const resolvedBinary = resolveTool(command);
 					const proc = spawn(resolvedBinary, [
+						...wrapperArgs,
 						...deviceArgs, '--package', pkg, '--json', probeJson,
 					], { timeout: 5000, env: toolSpawnEnv(resolvedBinary) });
 

@@ -1,6 +1,46 @@
 import * as path from 'path';
 import { promises as fs } from 'fs';
-import { ClashManifest, ParsedClashManifest, ClashDomain, ComponentInfo } from './clash-manifest-types';
+import {
+	ClashManifest,
+	ParsedClashManifest,
+	ClashDomain,
+	ClashPort,
+	ComponentInfo,
+	TopClock,
+} from './clash-manifest-types';
+
+/**
+ * The clock place & route is constrained against, or undefined when the design
+ * has none.
+ *
+ * nextpnr's `--freq` is a single number applied to the whole design, so a
+ * design driven by clocks in two domains cannot be expressed by it. Rather than
+ * pick one — which would produce a confident "constraints met" verdict about a
+ * constraint half the design never had — this refuses, and says which clocks
+ * are in play. Several ports in the *same* domain are one constraint and pass.
+ */
+export function pnrTargetClock(
+	manifest: ParsedClashManifest | undefined,
+): TopClock | undefined {
+	if (!manifest) {
+		throw new Error(
+			'No Clash manifest for this run, so the design\'s clock is unknown — ' +
+			'cannot decide what to constrain place & route against.'
+		);
+	}
+	const byDomain = new Map(manifest.topClocks.map(c => [c.domain, c]));
+	if (byDomain.size === 0) { return undefined; }
+	if (byDomain.size === 1) { return manifest.topClocks[0]; }
+
+	const described = [...byDomain.values()]
+		.map(c => `${c.port} (${c.domain}, ${c.frequencyMHz.toFixed(2)} MHz)`)
+		.join(', ');
+	throw new Error(
+		`${manifest.top_component.name} is driven by clocks in ${byDomain.size} ` +
+		`domains — ${described}. nextpnr takes one --freq for the whole design, ` +
+		'so there is no single target to place and route against.'
+	);
+}
 
 /**
  * Parser and analyzer for Clash manifest files
@@ -35,16 +75,19 @@ export class ClashManifestParser {
 			.filter(f => f.name.endsWith('.v'))
 			.map(f => path.join(directory, f.name));
 
-		// Determine primary clock domain and frequency
-		const { primaryDomain, targetFrequencyMHz } = this.analyzeDomains(manifest.domains);
+		// Pair the top entity's clocks with their domains
+		const topClocks = this.topClocksOf(
+			manifestPath,
+			manifest.domains,
+			manifest.top_component,
+		);
 
 		return {
 			...manifest,
 			manifestPath,
 			directory,
 			verilogFiles,
-			primaryDomain,
-			targetFrequencyMHz
+			topClocks
 		};
 	}
 
@@ -387,31 +430,55 @@ export class ClashManifestParser {
 	}
 
 	/**
-	 * Analyze clock domains to determine primary domain and target frequency
+	 * Pair each of the top entity's clock ports with the domain it declares.
+	 *
+	 * The manifest states which ports are clocks, which domain each belongs to,
+	 * and what every domain's period is — so this reads it, and never guesses
+	 * around it.  A clock naming a domain the manifest doesn't define, or a
+	 * domain without a usable period, means the manifest disagrees with itself:
+	 * that is a hard error rather than a reason to substitute another domain,
+	 * because the number ends up as the constraint place & route is judged
+	 * against and a plausible wrong answer is worse than none.
+	 *
+	 * An empty result means the top entity has no clock port. That is a real
+	 * property of a combinational design, not a missing value.
 	 */
-	private analyzeDomains(domains: Record<string, ClashDomain>): {
-		primaryDomain?: string;
-		targetFrequencyMHz?: number;
-	} {
-		if (Object.keys(domains).length === 0) {
-			return {};
-		}
+	private topClocksOf(
+		manifestPath: string,
+		domains: Record<string, ClashDomain>,
+		topComponent: { name?: string; ports_flat?: ClashPort[] },
+	): TopClock[] {
+		const clockPorts = (topComponent.ports_flat ?? []).filter(p => p.is_clock);
 
-		// Heuristic: Use "System" domain if available, otherwise first domain
-		let primaryDomain = Object.keys(domains)[0];
-		if ('System' in domains) {
-			primaryDomain = 'System';
-		}
-
-		// Convert period from picoseconds to MHz
-		// period is in ps, so frequency = 1 / (period * 1e-12) Hz = 1e12 / period Hz = 1e6 / period MHz
-		const domain = domains[primaryDomain];
-		const targetFrequencyMHz = 1_000_000 / domain.period; // period in ps -> MHz
-
-		return {
-			primaryDomain,
-			targetFrequencyMHz
-		};
+		return clockPorts.map(port => {
+			if (!port.domain) {
+				throw new Error(
+					`Manifest ${manifestPath}: clock port "${port.name}" declares no ` +
+					'clock domain, so its frequency is unknown.'
+				);
+			}
+			const domain = domains[port.domain];
+			if (!domain) {
+				throw new Error(
+					`Manifest ${manifestPath}: clock port "${port.name}" is in domain ` +
+					`"${port.domain}", which the manifest does not define ` +
+					`(it defines: ${Object.keys(domains).join(', ') || 'none'}).`
+				);
+			}
+			if (typeof domain.period !== 'number' || domain.period <= 0) {
+				throw new Error(
+					`Manifest ${manifestPath}: domain "${port.domain}" has no usable ` +
+					`clock period (got ${JSON.stringify(domain.period)}).`
+				);
+			}
+			return {
+				port: port.name,
+				domain: port.domain,
+				periodPs: domain.period,
+				// period is in ps: frequency = 1e12 / period Hz = 1e6 / period MHz
+				frequencyMHz: 1_000_000 / domain.period,
+			};
+		});
 	}
 
 	/**
@@ -433,31 +500,6 @@ export class ClashManifestParser {
 		}
 
 		return { clocks, resets };
-	}
-
-	/**
-	 * Parse an SDC file for the target clock frequency.
-	 * SDC files from Clash look like:
-	 *   create_clock -name {CLK} -period 20.000 -waveform {0.000 10.000} [get_ports {CLK}]
-	 * Returns frequency in MHz, or undefined if no clock constraint is found.
-	 */
-	async parseSdcFrequency(manifestDir: string): Promise<number | undefined> {
-		// Find .sdc files in the manifest directory
-		const entries = await fs.readdir(manifestDir);
-		const sdcFiles = entries.filter(f => f.endsWith('.sdc'));
-
-		for (const sdcFile of sdcFiles) {
-			const content = await fs.readFile(path.join(manifestDir, sdcFile), 'utf8');
-			const match = content.match(/create_clock\s+.*-period\s+([\d.]+)/);
-			if (match) {
-				const periodNs = parseFloat(match[1]);
-				if (periodNs > 0) {
-					return 1000 / periodNs; // ns -> MHz
-				}
-			}
-		}
-
-		return undefined;
 	}
 
 	/**

@@ -20,7 +20,7 @@ At every stage you can inspect output, view statistics, and open a schematic dia
 - **Sidebar** — browse functions, inspect synthesis results, and revisit past runs from the *Clash Synthesis* view
 - **Editable synthesis scripts** — override the Yosys script per target from the settings panel
 - **Optional out-of-context synthesis** — synthesize each component standalone (generic cells, no technology mapping) for a per-component diagram and statistics
-- **SDC frequency parsing** — reads Clash-generated `.sdc` files for target clock frequency
+- **Timing targets from the design** — the top entity's clock domain sets the frequency place & route is judged against
 - **Schematic diagrams** — netlistsvg-rendered SVG schematic per synthesis run, with no extra tool to install
 - **Hierarchical inspection** — expand a module in the sidebar to reach the components it instantiates, each with its own diagram
 - **Full PnR flow** — ECP5 / iCE40 / Gowin place & route with timing analysis and utilization reports

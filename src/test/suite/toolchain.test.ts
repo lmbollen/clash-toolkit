@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { ToolchainChecker } from '../../toolchain';
+import { ToolchainChecker, resolveToolCommand, splitCommand } from '../../toolchain';
 
 suite('Toolchain Checker Test Suite', () => {
 	let outputChannel: vscode.OutputChannel;
@@ -72,5 +72,35 @@ suite('Toolchain Checker Test Suite', () => {
 		assert.ok(summary.includes('missing'), 'Summary should mention missing');
 		assert.ok(summary.includes('✓'), 'Summary should have a check mark');
 		assert.ok(summary.includes('✗'), 'Summary should have an X mark');
+	});
+	// Every tool the extension spawns is named by its own id, so an absent
+	// override has to mean "run it by name" — that is what lets PATH detection
+	// and the managed download take over.
+	suite('tool command overrides', () => {
+		test('an absent override leaves the tool named by its id', () => {
+			assert.strictEqual(resolveToolCommand(undefined, 'yosys'), 'yosys');
+			assert.strictEqual(resolveToolCommand({}, 'nextpnr-ecp5'), 'nextpnr-ecp5');
+			assert.strictEqual(resolveToolCommand({ yosys: '   ' }, 'yosys'), 'yosys');
+		});
+
+		test('an override applies only to the tool it names', () => {
+			const overrides = { yosys: '/opt/oss-cad-suite/bin/yosys' };
+			assert.strictEqual(resolveToolCommand(overrides, 'yosys'), '/opt/oss-cad-suite/bin/yosys');
+			assert.strictEqual(resolveToolCommand(overrides, 'cabal'), 'cabal');
+			assert.strictEqual(resolveToolCommand(overrides, 'nextpnr-ice40'), 'nextpnr-ice40');
+		});
+
+		// The point of overriding is reaching tools PATH and the managed suite
+		// cannot: a wrapper in front of the binary, or a path with spaces.
+		test('a wrapper command survives the split into command + leading args', () => {
+			assert.deepStrictEqual(
+				splitCommand(resolveToolCommand({ yosys: 'nix run nixpkgs#yosys --' }, 'yosys')),
+				['nix', 'run', 'nixpkgs#yosys', '--'],
+			);
+			assert.deepStrictEqual(
+				splitCommand(resolveToolCommand({ cabal: '"/opt/My Tools/bin/cabal"' }, 'cabal')),
+				['/opt/My Tools/bin/cabal'],
+			);
+		});
 	});
 });

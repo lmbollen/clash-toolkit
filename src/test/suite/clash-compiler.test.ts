@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { ClashCompiler } from '../../clash-compiler';
+import { ClashCompiler, resolveCabalJobs } from '../../clash-compiler';
 
 suite('Clash Compiler Test Suite', () => {
 	let outputChannel: vscode.OutputChannel;
@@ -51,5 +51,31 @@ suite('Clash Compiler Test Suite', () => {
 
 		const diagnostics = compiler.parseDiagnostics(output, '/tmp/Wrapper.hs');
 		assert.strictEqual(diagnostics.length, 0, 'Should not create diagnostics for other files');
+	});
+
+	suite('cabal --jobs', () => {
+		test('auto means one job per core', () => {
+			assert.strictEqual(resolveCabalJobs('auto'), '$ncpus');
+			assert.strictEqual(resolveCabalJobs('AUTO'), '$ncpus');
+			assert.strictEqual(resolveCabalJobs('$ncpus'), '$ncpus');
+		});
+
+		test('a job count is passed through, as a number or a string', () => {
+			assert.strictEqual(resolveCabalJobs(4), '4');
+			assert.strictEqual(resolveCabalJobs('4'), '4');
+			assert.strictEqual(resolveCabalJobs(1), '1');
+		});
+
+		// A bad setting must not become a bad argument: cabal would refuse to
+		// start and the user would see a flag error instead of their build.
+		test('nonsense falls back to cabal\'s own default', () => {
+			assert.strictEqual(resolveCabalJobs(undefined), undefined);
+			assert.strictEqual(resolveCabalJobs(null), undefined);
+			assert.strictEqual(resolveCabalJobs(''), undefined);
+			assert.strictEqual(resolveCabalJobs(0), undefined);
+			assert.strictEqual(resolveCabalJobs(-2), undefined);
+			assert.strictEqual(resolveCabalJobs(2.5), undefined);
+			assert.strictEqual(resolveCabalJobs('many'), undefined);
+		});
 	});
 });

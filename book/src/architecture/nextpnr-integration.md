@@ -74,7 +74,7 @@ nextpnr-ecp5 \
   --25k \
   --package CABGA381 \
   --speed 6 \
-  --freq 50 \              # from SDC, when available
+  --freq 50 \              # top entity's clock domain, when it has one
   --lpf constraints.lpf    # when provided
 ```
 

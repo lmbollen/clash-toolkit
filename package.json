@@ -46,16 +46,8 @@
     "views": {
       "clash-synthesis": [
         {
-          "id": "clash-toolkit.haskellFunctions",
-          "name": "Haskell Functions"
-        },
-        {
-          "id": "clash-toolkit.synthesisResults",
-          "name": "Synthesis Results"
-        },
-        {
-          "id": "clash-toolkit.runHistory",
-          "name": "Run History"
+          "id": "clash-toolkit.explorer",
+          "name": "Clash Synthesis"
         }
       ]
     },
@@ -92,6 +84,11 @@
         "command": "clash-toolkit.installToolchain",
         "title": "Clash: Install Toolchain",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "clash-toolkit.refresh",
+        "title": "Clash: Refresh",
+        "icon": "$(refresh)"
       },
       {
         "command": "clash-toolkit.refreshHaskellFunctions",
@@ -147,6 +144,16 @@
         "icon": "$(trash)"
       },
       {
+        "command": "clash-toolkit.deleteDesignHistory",
+        "title": "Clash: Delete Design History",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "clash-toolkit.clearRunHistory",
+        "title": "Clash: Clear Run History",
+        "icon": "$(trash)"
+      },
+      {
         "command": "clash-toolkit.selectRun",
         "title": "Clash: Show Run in Synthesis Results"
       }
@@ -184,182 +191,237 @@
         {
           "command": "clash-toolkit.deleteRun",
           "when": "false"
+        },
+        {
+          "command": "clash-toolkit.deleteDesignHistory",
+          "when": "false"
         }
       ],
       "view/title": [
         {
           "command": "clash-toolkit.synthesizeFunction",
-          "when": "view == clash-toolkit.haskellFunctions",
+          "when": "view == clash-toolkit.explorer",
           "group": "navigation@1"
         },
         {
           "command": "clash-toolkit.elaborate",
-          "when": "view == clash-toolkit.haskellFunctions",
+          "when": "view == clash-toolkit.explorer",
           "group": "navigation@2"
         },
         {
           "command": "clash-toolkit.synthesize",
-          "when": "view == clash-toolkit.haskellFunctions",
+          "when": "view == clash-toolkit.explorer",
           "group": "navigation@3"
         },
         {
           "command": "clash-toolkit.placeAndRoute",
-          "when": "view == clash-toolkit.haskellFunctions",
+          "when": "view == clash-toolkit.explorer",
           "group": "navigation@4"
         },
         {
-          "command": "clash-toolkit.refreshHaskellFunctions",
-          "when": "view == clash-toolkit.haskellFunctions",
+          "command": "clash-toolkit.refresh",
+          "when": "view == clash-toolkit.explorer",
           "group": "navigation@5"
         },
         {
           "command": "clash-toolkit.openSettings",
-          "when": "view == clash-toolkit.haskellFunctions",
+          "when": "view == clash-toolkit.explorer",
           "group": "navigation@6"
-        },
-        {
-          "command": "clash-toolkit.openSettings",
-          "when": "view == clash-toolkit.synthesisResults",
-          "group": "navigation@1"
-        },
-        {
-          "command": "clash-toolkit.refreshRunHistory",
-          "when": "view == clash-toolkit.runHistory",
-          "group": "navigation@1"
-        },
-        {
-          "command": "clash-toolkit.openSettings",
-          "when": "view == clash-toolkit.runHistory",
-          "group": "navigation@2"
         }
       ],
       "view/item/context": [
         {
           "command": "clash-toolkit.openSynthesizedVerilog",
-          "when": "view == clash-toolkit.synthesisResults && viewItem =~ /verilog/",
+          "when": "view == clash-toolkit.explorer && viewItem =~ /^synthesisModule-.*verilog/",
           "group": "inline@1"
         },
         {
           "command": "clash-toolkit.viewModuleDiagram",
-          "when": "view == clash-toolkit.synthesisResults && viewItem =~ /diagram/",
+          "when": "view == clash-toolkit.explorer && viewItem =~ /^synthesisModule-.*diagram/",
           "group": "inline@2"
         },
         {
           "command": "clash-toolkit.openHistoryVerilog",
-          "when": "view == clash-toolkit.runHistory && viewItem =~ /verilog/",
+          "when": "view == clash-toolkit.explorer && viewItem =~ /^historyModule-.*verilog/",
           "group": "inline@1"
         },
         {
           "command": "clash-toolkit.openHistoryDiagram",
-          "when": "view == clash-toolkit.runHistory && viewItem =~ /diagram/",
+          "when": "view == clash-toolkit.explorer && viewItem =~ /^historyModule-.*diagram/",
           "group": "inline@2"
         },
         {
           "command": "clash-toolkit.deleteRun",
-          "when": "view == clash-toolkit.runHistory && viewItem == historyRun",
+          "when": "view == clash-toolkit.explorer && viewItem == historyRun",
           "group": "inline@3"
+        },
+        {
+          "command": "clash-toolkit.deleteDesignHistory",
+          "when": "view == clash-toolkit.explorer && viewItem == historyFunction",
+          "group": "inline@1"
+        },
+        {
+          "command": "clash-toolkit.clearRunHistory",
+          "when": "view == clash-toolkit.explorer && viewItem == clashSection-history",
+          "group": "inline@1"
         }
       ]
     },
-    "configuration": {
-      "title": "Clash Toolkit",
-      "properties": {
-        "clash-toolkit.yosysCommand": {
-          "type": "string",
-          "default": "yosys",
-          "description": "Command to run Yosys"
-        },
-        "clash-toolkit.outOfContext": {
-          "type": "boolean",
-          "default": false,
-          "description": "Out-of-context synthesis: when enabled, multi-component designs are synthesized one component at a time so each gets its own utilization stats and circuit diagram. Each component is synthesized on its own with the components it instantiates flattened into it, using generic optimization only (proc, flatten, opt, memory -nomap) — there is no technology mapping, so synthesisTarget and any custom synthesis script do not apply, cells stay generic, a component's figures include its descendants, and nothing is optimized against its parent. Use them to compare components with each other, not to predict whole-design utilization. When disabled, the whole design is synthesized as a single netlist with the selected target."
-        },
-        "clash-toolkit.pnrTargetFrequencyMHz": {
-          "type": [
-            "number",
-            "null"
-          ],
-          "default": null,
-          "description": "Target frequency in MHz passed to nextpnr as --freq. Used when no SDC file is present; with an SDC, the SDC constraint takes precedence. Leave blank to let nextpnr report Fmax without a target."
-        },
-        "clash-toolkit.pnrWriteRoutedSvg": {
-          "type": "boolean",
-          "default": true,
-          "description": "Write a routed-layout SVG alongside the nextpnr output — useful for visualising where the design landed on the fabric."
-        },
-        "clash-toolkit.synthesisTarget": {
-          "type": "string",
-          "enum": [
-            "generic",
-            "ice40",
-            "ecp5",
-            "xilinx",
-            "gowin",
-            "quicklogic",
-            "sf2"
-          ],
-          "enumDescriptions": [
-            "Generic (technology-independent synthesis)",
-            "Lattice iCE40 (synth_ice40)",
-            "Lattice ECP5 (synth_ecp5)",
-            "AMD / Xilinx 7-series (synth_xilinx)",
-            "Gowin (synth_gowin)",
-            "QuickLogic (synth_quicklogic)",
-            "Microsemi SmartFusion2 (synth_sf2)"
-          ],
-          "default": "generic",
-          "description": "Target FPGA family for Yosys synthesis"
-        },
-        "clash-toolkit.elaborationScript": {
-          "type": "string",
-          "default": "",
-          "editPresentation": "multilineText",
-          "description": "Custom Yosys script for the Elaboration stage (hierarchy + proc, no technology mapping). Leave empty to use the built-in default. Placeholders: {files}, {topModule}, {outputDir}, {outputBaseName}"
-        },
-        "clash-toolkit.synthesisScript.generic": {
-          "type": "string",
-          "default": "",
-          "editPresentation": "multilineText",
-          "description": "Custom Yosys script for Generic target. Leave empty to use the built-in default. Placeholders: {files}, {topModule}, {outputDir}, {outputBaseName}"
-        },
-        "clash-toolkit.synthesisScript.ice40": {
-          "type": "string",
-          "default": "",
-          "editPresentation": "multilineText",
-          "description": "Custom Yosys script for iCE40 target. Leave empty to use the built-in default. Placeholders: {files}, {topModule}, {outputDir}, {outputBaseName}"
-        },
-        "clash-toolkit.synthesisScript.ecp5": {
-          "type": "string",
-          "default": "",
-          "editPresentation": "multilineText",
-          "description": "Custom Yosys script for ECP5 target. Leave empty to use the built-in default. Placeholders: {files}, {topModule}, {outputDir}, {outputBaseName}"
-        },
-        "clash-toolkit.synthesisScript.xilinx": {
-          "type": "string",
-          "default": "",
-          "editPresentation": "multilineText",
-          "description": "Custom Yosys script for Xilinx target. Leave empty to use the built-in default. Placeholders: {files}, {topModule}, {outputDir}, {outputBaseName}"
-        },
-        "clash-toolkit.synthesisScript.gowin": {
-          "type": "string",
-          "default": "",
-          "editPresentation": "multilineText",
-          "description": "Custom Yosys script for Gowin target. Leave empty to use the built-in default. Placeholders: {files}, {topModule}, {outputDir}, {outputBaseName}"
-        },
-        "clash-toolkit.synthesisScript.quicklogic": {
-          "type": "string",
-          "default": "",
-          "editPresentation": "multilineText",
-          "description": "Custom Yosys script for QuickLogic target. Leave empty to use the built-in default. Placeholders: {files}, {topModule}, {outputDir}, {outputBaseName}"
-        },
-        "clash-toolkit.synthesisScript.sf2": {
-          "type": "string",
-          "default": "",
-          "editPresentation": "multilineText",
-          "description": "Custom Yosys script for SmartFusion2 target. Leave empty to use the built-in default. Placeholders: {files}, {topModule}, {outputDir}, {outputBaseName}"
+    "configuration": [
+      {
+        "title": "Synthesis",
+        "order": 1,
+        "properties": {
+          "clash-toolkit.synthesisTarget": {
+            "type": "string",
+            "enum": [
+              "generic",
+              "ice40",
+              "ecp5",
+              "xilinx",
+              "gowin",
+              "quicklogic",
+              "sf2"
+            ],
+            "enumDescriptions": [
+              "Generic (technology-independent synthesis)",
+              "Lattice iCE40 (synth_ice40)",
+              "Lattice ECP5 (synth_ecp5)",
+              "AMD / Xilinx 7-series (synth_xilinx)",
+              "Gowin (synth_gowin)",
+              "QuickLogic (synth_quicklogic)",
+              "Microsemi SmartFusion2 (synth_sf2)"
+            ],
+            "default": "generic",
+            "order": 1,
+            "description": "Target FPGA family for Yosys synthesis. Also selects the nextpnr binary used for Place & Route."
+          },
+          "clash-toolkit.outOfContext": {
+            "type": "boolean",
+            "default": false,
+            "order": 2,
+            "markdownDescription": "Synthesize each component of a multi-component design on its own, so each gets its own utilization stats and circuit diagram.\n\nThose figures are **not comparable with a whole-design run**: there is no technology mapping, so `synthesisTarget` and custom scripts do not apply, and each component is flattened so its numbers include its descendants."
+          }
+        }
+      },
+      {
+        "title": "Place & Route",
+        "order": 2,
+        "properties": {
+          "clash-toolkit.pnrWriteRoutedSvg": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Write a routed-layout SVG alongside the nextpnr output, showing where the design landed on the fabric.\n\nThe target frequency is not configured here — it is the period of the top entity's clock domain, read from the Clash manifest for each run."
+          }
+        }
+      },
+      {
+        "title": "Build",
+        "order": 3,
+        "properties": {
+          "clash-toolkit.cabalJobs": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "default": "auto",
+            "order": 1,
+            "markdownDescription": "How many packages cabal may build at once when generating Verilog (`cabal --jobs`). `auto` uses one job per CPU core, which is what makes a cold dependency tree build in parallel instead of one package at a time. Set a number to cap it, or `1` to build sequentially. Changing this never forces a rebuild."
+          },
+          "clash-toolkit.ghcJobs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "default": null,
+            "order": 2,
+            "markdownDescription": "Modules GHC may compile in parallel *within* one package (`--ghc-options=-jN`). Speeds up building your own package, which `cabalJobs` cannot parallelise on its own. Leave blank to let GHC decide (single-threaded).\n\n**Note:** GHC options are part of cabal's build plan, so switching this on or off rebuilds every package in the plan once."
+          }
+        }
+      },
+      {
+        "title": "Toolchain",
+        "order": 4,
+        "properties": {
+          "clash-toolkit.toolCommands": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "type": "string"
+            },
+            "markdownDescription": "Override the command used for an external tool, keyed by tool name: `cabal`, `yosys`, `nextpnr-ecp5`, `nextpnr-ice40`, `nextpnr-himbaechel`.\n\nOnly needed when a tool is neither on your `PATH` nor installed by **Clash: Install Toolchain** — an absolute path, or a wrapper to run in front of it (`wsl yosys`, `nix run nixpkgs#yosys --`). Values are split on spaces; quote paths that contain them."
+          },
+          "clash-toolkit.yosysCommand": {
+            "type": "string",
+            "default": "yosys",
+            "markdownDescription": "Command to run Yosys.",
+            "markdownDeprecationMessage": "Superseded by `#clash-toolkit.toolCommands#`, which covers every tool rather than yosys alone. Still honoured; move it to `toolCommands` with the key `yosys`."
+          }
+        }
+      },
+      {
+        "title": "Yosys Scripts",
+        "order": 5,
+        "properties": {
+          "clash-toolkit.elaborationScript": {
+            "type": "string",
+            "default": "",
+            "editPresentation": "multilineText",
+            "order": 1,
+            "markdownDescription": "Custom Yosys script for the Elaboration stage (hierarchy + proc, no technology mapping). Leave empty to use the built-in default.\n\nPlaceholders: `{files}`, `{topModule}`, `{outputDir}`, `{outputBaseName}`"
+          },
+          "clash-toolkit.synthesisScript.generic": {
+            "type": "string",
+            "default": "",
+            "editPresentation": "multilineText",
+            "order": 2,
+            "markdownDescription": "Custom Yosys script for the Generic target. Leave empty to use the built-in default.\n\nPlaceholders: `{files}`, `{topModule}`, `{outputDir}`, `{outputBaseName}`"
+          },
+          "clash-toolkit.synthesisScript.ice40": {
+            "type": "string",
+            "default": "",
+            "editPresentation": "multilineText",
+            "order": 3,
+            "markdownDescription": "Custom Yosys script for the iCE40 target. Leave empty to use the built-in default.\n\nPlaceholders: `{files}`, `{topModule}`, `{outputDir}`, `{outputBaseName}`"
+          },
+          "clash-toolkit.synthesisScript.ecp5": {
+            "type": "string",
+            "default": "",
+            "editPresentation": "multilineText",
+            "order": 4,
+            "markdownDescription": "Custom Yosys script for the ECP5 target. Leave empty to use the built-in default.\n\nPlaceholders: `{files}`, `{topModule}`, `{outputDir}`, `{outputBaseName}`"
+          },
+          "clash-toolkit.synthesisScript.xilinx": {
+            "type": "string",
+            "default": "",
+            "editPresentation": "multilineText",
+            "order": 5,
+            "markdownDescription": "Custom Yosys script for the Xilinx target. Leave empty to use the built-in default.\n\nPlaceholders: `{files}`, `{topModule}`, `{outputDir}`, `{outputBaseName}`"
+          },
+          "clash-toolkit.synthesisScript.gowin": {
+            "type": "string",
+            "default": "",
+            "editPresentation": "multilineText",
+            "order": 6,
+            "markdownDescription": "Custom Yosys script for the Gowin target. Leave empty to use the built-in default.\n\nPlaceholders: `{files}`, `{topModule}`, `{outputDir}`, `{outputBaseName}`"
+          },
+          "clash-toolkit.synthesisScript.quicklogic": {
+            "type": "string",
+            "default": "",
+            "editPresentation": "multilineText",
+            "order": 7,
+            "markdownDescription": "Custom Yosys script for the QuickLogic target. Leave empty to use the built-in default.\n\nPlaceholders: `{files}`, `{topModule}`, `{outputDir}`, `{outputBaseName}`"
+          },
+          "clash-toolkit.synthesisScript.sf2": {
+            "type": "string",
+            "default": "",
+            "editPresentation": "multilineText",
+            "order": 8,
+            "markdownDescription": "Custom Yosys script for the SmartFusion2 target. Leave empty to use the built-in default.\n\nPlaceholders: `{files}`, `{topModule}`, `{outputDir}`, `{outputBaseName}`"
+          }
         }
       }
-    }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile && node scripts/verify-package.js",

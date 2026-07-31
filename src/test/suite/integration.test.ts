@@ -6,7 +6,7 @@ import { CodeGenerator, GenerationConfig } from '../../code-generator';
 import { ClashCompiler } from '../../clash-compiler';
 import { YosysRunner } from '../../yosys-runner';
 import { NextpnrRunner } from '../../nextpnr-runner';
-import { ClashManifestParser } from '../../clash-manifest-parser';
+import { ClashManifestParser, pnrTargetClock } from '../../clash-manifest-parser';
 import { FunctionInfo } from '../../types';
 import { getDefaultElaborationScript } from '../../synthesis-targets';
 import { ensureSubDiagram, subComponentsOf, waitForSvg } from '../../netlist-diagram';
@@ -306,10 +306,13 @@ suite('Integration: Full Synthesis + PnR Flow', () => {
 	});
 
 	// ---------------------------------------------------------------
-	// Step 4b: Parse SDC for target frequency
+	// Step 4b: Target frequency comes from the manifest
 	// ---------------------------------------------------------------
 
-	test('Step 4b: Parse SDC frequency from manifest directory', async function () {
+	// This is the number place & route constrains against, and it has to be a
+	// property of the entity being synthesized — not a setting — so that two top
+	// entities in one workspace can want different frequencies.
+	test('Step 4b: Target frequency is read from the manifest domain', async function () {
 		this.timeout(15000);
 
 		if (!manifestPath) {
@@ -318,16 +321,13 @@ suite('Integration: Full Synthesis + PnR Flow', () => {
 		}
 
 		const parser = new ClashManifestParser();
-		const manifestDir = path.dirname(manifestPath);
-		const freq = await parser.parseSdcFrequency(manifestDir);
+		const manifest = await parser.parseManifest(manifestPath);
 
-		// The test-project uses Dom50 (period 20000 ps = 20 ns = 50 MHz)
-		// SDC file should have period 20.000 ns → 50 MHz
-		if (freq !== undefined) {
-			assert.ok(freq > 0, 'Frequency should be positive');
-			assert.strictEqual(freq, 50, 'Dom50 should produce 50 MHz frequency from SDC');
-		}
-		// If no SDC exists that's also fine — the field is optional
+		// The test-project's top entity is clocked by Dom50: 20000 ps → 50 MHz.
+		// The manifest also lists System, which is exactly what must not be
+		// picked up instead.
+		assert.strictEqual(pnrTargetClock(manifest)?.domain, 'Dom50');
+		assert.strictEqual(pnrTargetClock(manifest)?.frequencyMHz, 50);
 	});
 
 	// ---------------------------------------------------------------

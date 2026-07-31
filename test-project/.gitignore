@@ -8,4 +8,6 @@ systemverilog/
 .stack-work/
 result
 .direnv/
+
+# Clash Toolkit: generated Verilog, netlists, diagrams and run history
 .clash/

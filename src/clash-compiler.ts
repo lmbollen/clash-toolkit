@@ -5,6 +5,7 @@ import { promises as fs, createWriteStream, WriteStream } from 'fs';
 import { ClashManifestParser } from './clash-manifest-parser';
 import { ParsedClashManifest } from './clash-manifest-types';
 import { getLogger } from './file-logger';
+import { toolInvocation } from './toolchain';
 
 /**
  * Result of Clash compilation
@@ -39,6 +40,30 @@ export interface ClashCompilationOptions {
 	cabalProjectDir?: string;
 	/** Abort signal — cancels the build by killing the cabal process. */
 	abortSignal?: AbortSignal;
+	/** How many packages cabal may build at once (`--jobs`).  Either a count
+	 *  or `'auto'` for one job per core; omit to leave cabal's default. */
+	cabalJobs?: number | string;
+	/** Modules GHC may compile in parallel within a package
+	 *  (`--ghc-options=-jN`); omit to leave GHC single-threaded. */
+	ghcJobs?: number;
+}
+
+/**
+ * Translate the `cabalJobs` setting into cabal's `--jobs` argument.
+ *
+ * cabal spells "one job per core" `$ncpus`; `auto` is the friendlier spelling
+ * we expose.  Anything we can't make sense of returns undefined so the build
+ * runs with cabal's own default rather than failing on a bad argument.
+ */
+export function resolveCabalJobs(setting: number | string | undefined | null): string | undefined {
+	if (setting === undefined || setting === null || setting === '') { return undefined; }
+	if (typeof setting === 'number') {
+		return Number.isInteger(setting) && setting >= 1 ? String(setting) : undefined;
+	}
+	const value = setting.trim().toLowerCase();
+	if (value === 'auto' || value === 'ncpus' || value === '$ncpus') { return '$ncpus'; }
+	if (/^\d+$/.test(value)) { return Number(value) >= 1 ? value : undefined; }
+	return undefined;
 }
 
 /**
@@ -49,8 +74,9 @@ export class ClashCompiler {
 
 	/** The fixed command and arguments used to invoke the Clash compiler
 	 *  via the synthesis cabal project. */
-	private static readonly CLASH_COMMAND = 'cabal';
-	private static readonly CLASH_BASE_ARGS = ['run', 'clash-synth:clash', '--'];
+	private static readonly CLASH_SUBCOMMAND = 'run';
+	/** Follows the subcommand and its build flags. */
+	private static readonly CLASH_TARGET_ARGS = ['clash-synth:clash', '--'];
 
 	constructor(private outputChannel: vscode.OutputChannel) {
 		this.manifestParser = new ClashManifestParser();
@@ -79,15 +105,26 @@ export class ClashCompiler {
 		// Determine HDL output directory
 		const hdlDir = options.hdlDir || path.join(options.outputDir, 'verilog');
 
-		// Get Clash command
-		const command = ClashCompiler.CLASH_COMMAND;
-		const baseArgs = [...ClashCompiler.CLASH_BASE_ARGS];
+		// Get Clash command.  A configured override may carry a wrapper in front
+		// of cabal (`nix run nixpkgs#cabal-install --`), whose args lead.
+		const { command, args: wrapperArgs } = toolInvocation('cabal');
 
 		// Determine cwd and extra args depending on whether we have a
 		// synthesis cabal project.
 		let cwd: string;
 		const cabalFlags: string[] = [];  // cabal-level flags (before subcommand)
+		const buildFlags: string[] = [];  // build flags (after the subcommand)
 		const extraArgs: string[] = [];   // GHC/Clash flags (after --)
+
+		// Parallelism.  Without --jobs, a cold dependency tree is built one
+		// package at a time on a single core, which dominates the first run.
+		const jobs = resolveCabalJobs(options.cabalJobs);
+		if (jobs) { buildFlags.push(`--jobs=${jobs}`); }
+		// GHC-level parallelism is opt-in: it is part of the build plan, so
+		// turning it on or off rebuilds every package in the plan once.
+		if (options.ghcJobs && options.ghcJobs > 1) {
+			buildFlags.push(`--ghc-options=-j${Math.floor(options.ghcJobs)}`);
+		}
 
 		if (options.synthProjectRoot) {
 			if (options.cabalProjectDir) {
@@ -113,10 +150,14 @@ export class ClashCompiler {
 		}
 
 		// Build Clash command arguments — use module name, not file path
-		// cabalFlags go before subcommand; extraArgs go after --
+		// cabalFlags go before the subcommand, buildFlags between it and the
+		// target, extraArgs after --
 		const args = [
+			...wrapperArgs,
 			...cabalFlags,
-			...baseArgs,
+			ClashCompiler.CLASH_SUBCOMMAND,
+			...buildFlags,
+			...ClashCompiler.CLASH_TARGET_ARGS,
 			...extraArgs,
 			options.moduleName,
 			'--verilog',
@@ -274,13 +315,16 @@ export class ClashCompiler {
 						});
 
 						// Display useful manifest info
-						if (manifest.targetFrequencyMHz) {
-							this.outputChannel.appendLine(`✓ Target frequency: ${manifest.targetFrequencyMHz.toFixed(2)} MHz (from ${manifest.primaryDomain} domain)`);
+						for (const clock of manifest.topClocks) {
+							this.outputChannel.appendLine(
+								`✓ Clock ${clock.port}: ${clock.frequencyMHz.toFixed(2)} MHz ` +
+								`(domain ${clock.domain})`
+							);
 						}
 
 						const { clocks, resets } = this.manifestParser.getClockResetPorts(manifest);
-						if (clocks.length > 0) {
-							this.outputChannel.appendLine(`✓ Clock signals: ${clocks.join(', ')}`);
+						if (clocks.length === 0) {
+							this.outputChannel.appendLine('✓ No clock ports — combinational design');
 						}
 						if (resets.length > 0) {
 							this.outputChannel.appendLine(`✓ Reset signals: ${resets.join(', ')}`);

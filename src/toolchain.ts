@@ -113,6 +113,58 @@ export function splitCommand(command: string): string[] {
 }
 
 /**
+ * Resolve the command for a tool from the `toolCommands` overrides.
+ *
+ * Every tool the extension spawns is named by its own id — `yosys`,
+ * `nextpnr-ecp5`, `cabal` — so an absent override means "run the tool by name"
+ * and the managed toolchain takes it from there. Pure so the precedence can be
+ * tested without a workspace.
+ */
+export function resolveToolCommand(
+    overrides: Record<string, string> | undefined,
+    id: string,
+): string {
+    const configured = overrides?.[id]?.trim();
+    return configured || id;
+}
+
+/**
+ * The command string configured for a tool, ready to probe or spawn.
+ *
+ * The override exists for the cases neither PATH detection nor the managed
+ * download can reach: a binary somewhere unusual, or a wrapper that has to run
+ * in front of it (`wsl yosys`, `nix run nixpkgs#yosys --`). It applies to every
+ * tool rather than yosys alone — place & route needs its nextpnr binary exactly
+ * as much as synthesis needs yosys.
+ */
+export function toolCommand(id: string): string {
+    const cfg = vscode.workspace.getConfiguration('clash-toolkit');
+    const fromMap = resolveToolCommand(
+        cfg.get<Record<string, string>>('toolCommands', {}),
+        id,
+    );
+    if (fromMap !== id) { return fromMap; }
+
+    // `yosysCommand` was the single-tool ancestor of `toolCommands`; it is
+    // deprecated but still honoured, so an existing configuration keeps working
+    // until its owner moves it over.
+    if (id === 'yosys') {
+        const legacy = cfg.get<string>('yosysCommand', '').trim();
+        if (legacy && legacy !== 'yosys') { return legacy; }
+    }
+    return id;
+}
+
+/**
+ * The configured command for a tool, split into the executable and any leading
+ * wrapper arguments the caller must put in front of its own.
+ */
+export function toolInvocation(id: string): { command: string; args: string[] } {
+    const parts = splitCommand(toolCommand(id));
+    return { command: parts[0] || id, args: parts.slice(1) };
+}
+
+/**
  * Checks availability of external tools needed by the extension.
  * Results are cached per session and can be refreshed on demand.
  */
@@ -230,13 +282,9 @@ export class ToolchainChecker {
      * Returns a map of tool name → status.
      */
     async checkAll(cwd?: string): Promise<Map<string, ToolStatus>> {
-        const config = vscode.workspace.getConfiguration('clash-toolkit');
-        const yosysCmd = config.get<string>('yosysCommand', 'yosys');
-
-        const checks = TOOL_DEFINITIONS.map(def => {
-            const command = def.id === 'yosys' ? yosysCmd : def.defaultCommand;
-            return this.check(def.id, command, def.versionFlag, cwd);
-        });
+        const checks = TOOL_DEFINITIONS.map(def =>
+            this.check(def.id, toolCommand(def.id), def.versionFlag, cwd)
+        );
 
         await Promise.all(checks);
         return new Map(
@@ -302,23 +350,19 @@ export class ToolchainChecker {
             }
         }
 
-        const settingHint = name === 'yosys'
-                ? 'clash-toolkit.yosysCommand'
-                : undefined;
-
-        let msg = `${name} is not available: ${status.error}.`;
-        if (settingHint) {
-            msg += ` Configure it in Settings → "${settingHint}".`;
-        } else {
-            msg += ` Make sure ${name} is installed and in your PATH.`;
-        }
+        // Every tool can be pointed somewhere else, so the same advice applies
+        // whichever one is missing.
+        const settingHint = 'clash-toolkit.toolCommands';
+        const msg =
+            `${name} is not available: ${status.error}. Make sure it is installed `
+            + `and in your PATH, or point "${settingHint}" at it.`;
 
         this.outputChannel.appendLine(`✗ ${msg}`);
         vscode.window.showErrorMessage(msg, 'Open Settings').then((choice) => {
             if (choice === 'Open Settings') {
                 vscode.commands.executeCommand(
                     'workbench.action.openSettings',
-                    settingHint || 'clash-toolkit'
+                    settingHint
                 );
             }
         });

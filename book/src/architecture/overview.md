@@ -15,7 +15,7 @@ src/
   ── Pipeline ──
   code-generator.ts         Wrapper generation, synth project, run directories
   clash-compiler.ts         Clash invocation and output parsing
-  clash-manifest-parser.ts  clash-manifest.json parsing, SDC frequency extraction
+  clash-manifest-parser.ts  clash-manifest.json parsing, clock-domain analysis
   clash-manifest-types.ts   Types for manifest data structures
   yosys-runner.ts           Yosys script generation and execution
   yosys-types.ts            Types for Yosys synthesis results
@@ -32,9 +32,10 @@ src/
   netlist-diagram.ts        Render orchestration, component hierarchy queries
 
   ── UI ──
-  haskell-functions-tree.ts Haskell Functions view
-  synthesis-results-tree.ts Synthesis Results view
-  run-history-tree.ts       Run History view
+  clash-tree.ts             The sidebar view; routes each section to its provider
+  haskell-functions-tree.ts Functions section
+  synthesis-results-tree.ts Results section
+  run-history-tree.ts       History section
   run-loader.ts             Reads a past run back off disk
   synthesis-settings-panel.ts  Settings webview (tools, scripts, inline diff)
 
@@ -85,7 +86,7 @@ User Code (.hs)
   ClashCompiler (cabal run clash → Verilog)
        │
        ▼
-  ClashManifestParser (manifest + SDC frequency)
+  ClashManifestParser (manifest + target frequency)
        │
        ▼
   YosysRunner (synthesis script → netlist JSON)
@@ -105,11 +106,13 @@ On activation (`onLanguage:haskell`):
    CodeGenerator, ClashCompiler, YosysRunner, NextpnrRunner) and the `clash`
    diagnostic collection
 4. Initialize the managed tool provider, then the ToolchainChecker
-5. Create the three sidebar views. Synthesis Results and Haskell Functions use
-   `createTreeView` rather than `registerTreeDataProvider` — the former needs a
-   `.message` banner to label which run is being displayed, the latter a
-   `.selection` property so title-bar buttons can read the selected function.
-   Run History needs neither, so it registers a plain data provider
+5. Create the sidebar view. The three tree providers are instantiated as before
+   and handed to `ClashTreeProvider`, which contributes the Functions / Results
+   / History section headers and routes every call back to whichever provider
+   produced the row (each returned node is stamped with its section, since
+   `SubComponentItem` rows can come from two of them). It is registered with
+   `createTreeView` rather than `registerTreeDataProvider` for its `.selection`
+   property, which title-bar buttons read to find the selected function
 6. Subscribe to active-editor changes so the functions view follows the current
    Haskell file
 7. Register commands and the code action provider for Haskell files

@@ -93,4 +93,4 @@ See [Managed Toolchain](managed-toolchain.md) for the full details.
    out-of-context mode enabled, each component is synthesized standalone with a
    fixed generic script instead — see [Configuration](configuration.md#out-of-context-synthesis).
 
-6. **Place & route** — Runs nextpnr for the selected device and reports timing and utilisation. The target frequency is parsed from Clash-generated SDC files.
+6. **Place & route** — Runs nextpnr for the selected device and reports timing and utilisation. The target frequency comes from the top entity's clock domain in the Clash manifest.

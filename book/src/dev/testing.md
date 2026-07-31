@@ -8,7 +8,10 @@ All tests live under `src/test/suite/` and use **Mocha** in TDD mode (`suite` / 
 |------|------|----------------|
 | `type-analyzer.test.ts` | Unit | Monomorphic/polymorphic detection, edge cases |
 | `code-generator.test.ts` | Unit | Wrapper generation, port annotations, DiffClock handling |
-| `sdc-parser.test.ts` | Unit | SDC frequency parsing (period → MHz) |
+| `manifest-frequency.test.ts` | Unit | Which clock domain sets the P&R target frequency |
+| `diagram-tabs.test.ts` | Unit | Diagrams reuse one preview tab; pinned ones are kept |
+| `gitignore.test.ts` | Unit | When the `.clash/` gitignore offer is made and what it writes |
+| `run-history.test.ts` | Unit | Reading past runs off disk; which directories count as history |
 | `synthesis-features.test.ts` | Unit | Commands, configuration, synthesis types |
 | `synthesis-targets.test.ts` | Unit | Target registry, default/resolved scripts, script diffing, and that the installed Yosys supports every offered target |
 | `code-actions.test.ts` | Unit | Code action provider for Haskell functions |
@@ -17,12 +20,13 @@ All tests live under `src/test/suite/` and use **Mocha** in TDD mode (`suite` / 
 | `toolchain.test.ts` | Unit | Full toolchain availability |
 | `clash-compiler.test.ts` | Unit | Clash compiler invocation helpers |
 | `nextpnr-runner.test.ts` | Unit | nextpnr child-process lifecycle |
-| `results-tree.test.ts` | Unit | Synthesis Results tree construction |
+| `results-tree.test.ts` | Unit | Results tree construction |
+| `clash-tree.test.ts` | Unit | Sidebar sections and routing to their providers |
 | `internal-components.test.ts` | Unit | Internal component expansion |
 | `pnr-targets.test.ts` | Integration | End-to-end synthesis + place & route per target |
 | `hls-client.test.ts` | Integration | HLS communication |
 | `function-detector.test.ts` | Integration | Function detection from real Haskell files via HLS |
-| `integration.test.ts` | Integration | Per-module synthesis, SDC parsing, end-to-end flows |
+| `integration.test.ts` | Integration | Per-module synthesis, target frequency, end-to-end flows |
 
 ## Running Tests
 

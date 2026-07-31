@@ -22,7 +22,7 @@ A live view of the toolchain. Three tools are probed — **cabal**, **Yosys**, a
 
 alongside the explanation of what that tool is needed for. **Refresh** re-probes
 everything from scratch rather than reusing the cached result, which is what you
-want after installing a tool or changing `yosysCommand`.
+want after installing a tool or changing `toolCommands`.
 
 > The other place-and-route binaries (`nextpnr-ice40`, `nextpnr-himbaechel`) are
 > **not** in this list. They are checked on demand when Place & Route runs for

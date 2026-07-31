@@ -16,9 +16,14 @@ still in flight.
 
 ## Viewing diagrams
 
+Diagrams open as **preview tabs**, so walking a hierarchy replaces the diagram
+on screen instead of leaving a tab behind for every component you looked at. To
+keep one while you open the next, pin its tab (or double-click it) — the next
+diagram then opens alongside rather than over it.
+
 - After **Clash: Elaborate**, the diagram opens automatically and one diagram is produced per module.
 - After **Clash: Synthesize**, the diagram opens automatically. With `outOfContext` enabled, each module gets its own diagram; otherwise a single whole-design diagram is rendered.
-- Click the diagram icon next to any module in the **Synthesis Results** sidebar (or the **Run History** view) to (re-)open that module's diagram.
+- Click the diagram icon next to any module in the sidebar's **Results** section (or under a run in **History**) to (re-)open that module's diagram.
 
 ## Drilling into sub-components
 
@@ -26,8 +31,8 @@ A diagram draws one module. The components it instantiates appear as boxes with
 their ports — not expanded into gates — which keeps the diagram readable but
 means the box alone tells you nothing about what is inside.
 
-To go inside one, expand the module's row in **Synthesis Results** (or under a
-run in **Run History**): every component it instantiates is listed beneath it,
+To go inside one, expand the module's row in **Results** (or under a run in
+**History**): every component it instantiates is listed beneath it,
 and those rows expand in turn, so a deep hierarchy is walkable level by level.
 Clicking a component opens its own diagram.
 

@@ -27,7 +27,8 @@ export interface RunMetadata {
     device?: string;
     deviceLabel?: string;
     packageName?: string;
-    sdcFrequencyMHz?: number;
+    /** The top entity's clocks, as the manifest stated them. */
+    clocks?: { port: string; domain: string; frequencyMHz: number }[];
     constraintsMet?: boolean;
     topModule?: string;
 }
@@ -73,22 +74,25 @@ async function loadStatsIfExists(dir: string): Promise<SynthesisStatistics | und
     }
 }
 
+/**
+ * The Verilog belonging to one component of a run.
+ *
+ * Clash writes a directory per component — `02-verilog/<Module.entity>/<name>.v`
+ * — so this has to search the tree, not the top of it. Listing only the top
+ * found nothing but directory names, which is why per-module runs (every
+ * elaboration, and out-of-context synthesis) offered no Verilog to open at all.
+ *
+ * Only files named after the component are returned: a component whose Verilog
+ * isn't there gets no rows rather than someone else's files.
+ */
 async function findVerilogFor(dir: string, moduleName: string): Promise<string[]> {
-    try {
-        const all = await fs.readdir(dir);
-        const matching = all.filter(f =>
-            (f === `${moduleName}.v` || f === `${moduleName}.sv` || f.startsWith(`${moduleName}_`)) &&
-            (f.endsWith('.v') || f.endsWith('.sv'))
-        );
-        if (matching.length > 0) {
-            return matching.map(f => path.join(dir, f));
-        }
-        return all
-            .filter(f => f.endsWith('.v') || f.endsWith('.sv'))
-            .map(f => path.join(dir, f));
-    } catch {
-        return [];
-    }
+    const all = await findAllVerilog(dir);
+    return all.filter(file => {
+        const name = path.basename(file);
+        return name === `${moduleName}.v`
+            || name === `${moduleName}.sv`
+            || name.startsWith(`${moduleName}_`);
+    });
 }
 
 async function findAllVerilog(dir: string): Promise<string[]> {

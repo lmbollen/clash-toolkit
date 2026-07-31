@@ -108,23 +108,43 @@ export interface ClashManifest {
 }
 
 /**
+ * A clock the top entity is driven by.
+ *
+ * Every field is stated by the manifest: the port, the domain it declares
+ * itself to be in, and that domain's period.  Nothing here is inferred.
+ */
+export interface TopClock {
+	/** Clock port on the top entity. */
+	port: string;
+
+	/** Domain the port belongs to. */
+	domain: string;
+
+	/** The domain's clock period, in picoseconds. */
+	periodPs: number;
+
+	/** The same period expressed as a frequency. */
+	frequencyMHz: number;
+}
+
+/**
  * Parsed manifest with additional computed information
  */
 export interface ParsedClashManifest extends ClashManifest {
 	/** Absolute path to the manifest file */
 	manifestPath: string;
-	
+
 	/** Directory containing the manifest */
 	directory: string;
-	
+
 	/** List of Verilog files (extracted from files array) */
 	verilogFiles: string[];
-	
-	/** Primary clock domain (if determinable) */
-	primaryDomain?: string;
-	
-	/** Target clock frequency in MHz (derived from primary domain period) */
-	targetFrequencyMHz?: number;
+
+	/**
+	 * The top entity's clock ports paired with their domains, in port order.
+	 * Empty for a design with no clock — not a stand-in for one.
+	 */
+	topClocks: TopClock[];
 }
 
 /**

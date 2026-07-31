@@ -2,9 +2,17 @@
 
 All generated files live under `.clash/` in the workspace root.
 
+Because that lands inside your repository, the extension offers once per
+workspace to add `.clash/` to an existing `.gitignore` — **Yes** writes the entry
+with a comment saying what it is, **No** is remembered and never asked again, and
+**Not right now** leaves the question open for the next session. The offer is
+skipped entirely when the workspace has no `.gitignore` (the extension does not
+create one) or when the file already mentions `.clash`. To change a **No** later,
+add the entry yourself; the extension will then see it and stay quiet.
+
 Each invocation writes into its own timestamped **run** directory, so previous
 results are never overwritten. This is what the
-[Run History](../guide/sidebar.md#run-history) view reads.
+[History](../guide/sidebar.md#history) section of the sidebar reads.
 
 ```
 .clash/

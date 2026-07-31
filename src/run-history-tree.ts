@@ -20,9 +20,11 @@ type HistoryTreeNode =
     | RunInfoItem;
 
 /** Top-level: groups runs by qualified function name. */
-class FunctionGroupNode extends vscode.TreeItem {
+export class FunctionGroupNode extends vscode.TreeItem {
     constructor(
         readonly qualifiedName: string,
+        /** `<workspace>/.clash/<qualifiedName>` — everything kept for it. */
+        readonly functionRoot: string,
         readonly runsDir: string,
         readonly runIds: string[],
     ) {
@@ -30,6 +32,25 @@ class FunctionGroupNode extends vscode.TreeItem {
         this.iconPath = new vscode.ThemeIcon('symbol-function');
         this.contextValue = 'historyFunction';
         this.description = `${runIds.length} run${runIds.length === 1 ? '' : 's'}`;
+    }
+}
+
+/**
+ * The per-design directories under `.clash/`, in display order.
+ *
+ * `synth-project/` is the generated cabal project rather than run output, so it
+ * is never one of them — which is what keeps it out of both the tree and
+ * anything that deletes what the tree shows.
+ */
+export async function listDesignDirs(clashDir: string): Promise<string[]> {
+    try {
+        const dirents = await fs.readdir(clashDir, { withFileTypes: true });
+        return dirents
+            .filter(d => d.isDirectory() && d.name !== 'synth-project')
+            .map(d => d.name)
+            .sort();
+    } catch {
+        return [];
     }
 }
 
@@ -202,19 +223,12 @@ export class RunHistoryTreeProvider
 
     private async getFunctionGroups(): Promise<HistoryTreeNode[]> {
         const clashDir = path.join(this.workspaceRoot!, '.clash');
-        let entries: string[];
-        try {
-            const dirents = await fs.readdir(clashDir, { withFileTypes: true });
-            entries = dirents
-                .filter(d => d.isDirectory() && d.name !== 'synth-project')
-                .map(d => d.name);
-        } catch {
-            return [placeholder('No run history yet')];
-        }
+        const entries = await listDesignDirs(clashDir);
 
         const groups: FunctionGroupNode[] = [];
-        for (const name of entries.sort()) {
-            const runsDir = path.join(clashDir, name, 'runs');
+        for (const name of entries) {
+            const functionRoot = path.join(clashDir, name);
+            const runsDir = path.join(functionRoot, 'runs');
             try {
                 const runDirents = await fs.readdir(runsDir, { withFileTypes: true });
                 const runIds = runDirents
@@ -223,7 +237,7 @@ export class RunHistoryTreeProvider
                     .sort()
                     .reverse();
                 if (runIds.length > 0) {
-                    groups.push(new FunctionGroupNode(name, runsDir, runIds));
+                    groups.push(new FunctionGroupNode(name, functionRoot, runsDir, runIds));
                 }
             } catch {
                 // No runs dir — skip

@@ -10,16 +10,24 @@ import { ensureSubDiagram, waitForSvg } from './netlist-diagram';
 import { NextpnrRunner } from './nextpnr-runner';
 import { ECP5Device, ECP5Package, PNR_FAMILIES } from './nextpnr-types';
 import { FunctionInfo } from './types';
-import { ClashManifestParser } from './clash-manifest-parser';
-import { ToolchainChecker } from './toolchain';
+import { ClashManifestParser, pnrTargetClock } from './clash-manifest-parser';
+import { ToolchainChecker, toolCommand } from './toolchain';
 import { initializeToolProvider, getToolProvider } from './tool-provider';
 import { initializeLogger, getLogger } from './file-logger';
+import { offerGitignoreEntry } from './gitignore';
 import { ClashCodeActionProvider } from './clash-code-actions';
 import { SynthesisSettingsPanel } from './synthesis-settings-panel';
 import { SynthesisResultsTreeProvider } from './synthesis-results-tree';
-import { RunHistoryTreeProvider, RunModuleNode, RunNode } from './run-history-tree';
+import {
+	FunctionGroupNode,
+	RunHistoryTreeProvider,
+	RunModuleNode,
+	RunNode,
+	listDesignDirs,
+} from './run-history-tree';
 import { loadRun } from './run-loader';
 import { HaskellFunctionsTreeProvider, FunctionNode } from './haskell-functions-tree';
+import { ClashTreeProvider } from './clash-tree';
 import { getDefaultElaborationScript } from './synthesis-targets';
 
 // Output channel for logging
@@ -47,15 +55,24 @@ async function openSvgPreview(svgPath?: string): Promise<void> {
 		);
 		return;
 	}
+	// Open as a *preview* tab: walking a hierarchy means opening one diagram
+	// after another, and each one replaces the last instead of leaving a trail
+	// of tabs behind.  Keeping one is the editor's own gesture — pin it, or
+	// double-click its tab, and the next diagram opens beside it rather than
+	// over it.
+	const showOptions: vscode.TextDocumentShowOptions = { preview: true };
 	try {
 		await vscode.commands.executeCommand(
 			'vscode.openWith',
 			vscode.Uri.file(svgPath),
-			'imagePreview.previewEditor'
+			'imagePreview.previewEditor',
+			showOptions
 		);
 	} catch {
 		// Fall back to plain open if the image preview editor isn't available.
-		await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(svgPath));
+		await vscode.commands.executeCommand(
+			'vscode.open', vscode.Uri.file(svgPath), showOptions
+		);
 	}
 }
 /**
@@ -69,22 +86,24 @@ function showSynthesisResults(
 	message: string,
 ): void {
 	synthesisTreeProvider.refresh(modules, pnr);
-	if (synthesisResultsView) {
-		// Derived from the results rather than passed in, so a run loaded from
-		// history is labelled the same way a fresh one is.
-		const ooc = modules.some(m => m.outOfContext);
-		synthesisResultsView.message = ooc
-			? `${message} · out-of-context: each component synthesized on its own, ` +
-				'generic cells only — not comparable with a whole-design run'
-			: message;
-	}
+	// Derived from the results rather than passed in, so a run loaded from
+	// history is labelled the same way a fresh one is.
+	const ooc = modules.some(m => m.outOfContext);
+	clashTreeProvider?.setSectionStatus(
+		'results',
+		ooc ? `${message} · out of context` : message,
+		ooc
+			? `${message}\n\nOut-of-context run: each component was synthesized on its own ` +
+				'with generic cells only — not comparable with a whole-design run.'
+			: message,
+	);
 }
 
 let synthesisTreeProvider: SynthesisResultsTreeProvider;
-let synthesisResultsView: vscode.TreeView<unknown>;
 let runHistoryTreeProvider: RunHistoryTreeProvider;
 let haskellFunctionsTreeProvider: HaskellFunctionsTreeProvider;
-let haskellFunctionsTreeView: vscode.TreeView<import('./haskell-functions-tree').FunctionTreeNode>;
+let clashTreeProvider: ClashTreeProvider;
+let clashTreeView: vscode.TreeView<unknown>;
 let hlsClient: HLSClient;
 let clashDiagnostics: vscode.DiagnosticCollection;
 let functionDetector: FunctionDetector;
@@ -110,7 +129,7 @@ interface SynthesisOutput {
 	synthResult: import('./yosys-types').YosysSynthesisResult;
 	moduleResults: import('./yosys-types').ModuleSynthesisResult[];
 	topModule: string;
-	sdcFrequencyMHz: number | undefined;
+	topClocks: import('./clash-manifest-types').TopClock[];
 	projectDirs: CompilationOutput['projectDirs'];
 }
 
@@ -126,6 +145,15 @@ export function activate(context: vscode.ExtensionContext) {
 		const logger = initializeLogger(workspaceFolders[0].uri.fsPath);
 		logger.info('Extension activating...');
 		logger.info(`Workspace: ${workspaceFolders[0].uri.fsPath}`);
+
+		// Offer to ignore the working directory this extension writes into.
+		// Not awaited: the answer is the user's to give whenever, and nothing
+		// below depends on it.
+		void offerGitignoreEntry(
+			context.workspaceState,
+			workspaceFolders[0].uri.fsPath,
+			outputChannel,
+		);
 	}
 
 	// Initialize HLS client and function detector
@@ -142,37 +170,30 @@ export function activate(context: vscode.ExtensionContext) {
 	initializeToolProvider(context, outputChannel);
 	toolchain = new ToolchainChecker(outputChannel);
 
-	// Register sidebar tree view for synthesis results.
-	// createTreeView (instead of registerTreeDataProvider) gives us a `.message`
-	// banner that we use to label which run is currently being shown.
+	// One sidebar view holding Functions, Results and History as sections.
+	// Each keeps its own provider — ClashTreeProvider only stitches them
+	// together — so what a section shows is still decided in one place.
 	synthesisTreeProvider = new SynthesisResultsTreeProvider();
-	synthesisResultsView = vscode.window.createTreeView(
-		'clash-toolkit.synthesisResults',
-		{ treeDataProvider: synthesisTreeProvider }
-	);
-	context.subscriptions.push(synthesisResultsView);
-
-	// Register sidebar tree view for run history
 	runHistoryTreeProvider = new RunHistoryTreeProvider();
 	runHistoryTreeProvider.setWorkspaceRoot(
 		vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
 	);
-	context.subscriptions.push(
-		vscode.window.registerTreeDataProvider(
-			'clash-toolkit.runHistory',
-			runHistoryTreeProvider
-		)
-	);
+	haskellFunctionsTreeProvider = new HaskellFunctionsTreeProvider();
 
-	// Register sidebar tree view for Haskell functions.
+	clashTreeProvider = new ClashTreeProvider(
+		haskellFunctionsTreeProvider,
+		synthesisTreeProvider,
+		runHistoryTreeProvider,
+	);
+	context.subscriptions.push(clashTreeProvider);
+
 	// createTreeView (instead of registerTreeDataProvider) gives us a .selection
 	// property so title-bar buttons can read the currently selected function.
-	haskellFunctionsTreeProvider = new HaskellFunctionsTreeProvider();
-	haskellFunctionsTreeView = vscode.window.createTreeView(
-		'clash-toolkit.haskellFunctions',
-		{ treeDataProvider: haskellFunctionsTreeProvider }
+	clashTreeView = vscode.window.createTreeView(
+		'clash-toolkit.explorer',
+		{ treeDataProvider: clashTreeProvider }
 	);
-	context.subscriptions.push(haskellFunctionsTreeView);
+	context.subscriptions.push(clashTreeView);
 
 	// Refresh functions view when active editor changes to a Haskell file
 	context.subscriptions.push(
@@ -239,7 +260,21 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 			for (const f of files) {
 				const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(f));
-				await vscode.window.showTextDocument(doc, { preview: false });
+				await vscode.window.showTextDocument(doc, { preview: true });
+			}
+		})
+	);
+
+	// Command: refresh the whole sidebar.  The view has one title bar, so the
+	// per-section refreshes below stay available from the palette and the
+	// button refreshes everything that reads from outside the extension.
+	context.subscriptions.push(
+		vscode.commands.registerCommand('clash-toolkit.refresh', () => {
+			runHistoryTreeProvider.refresh();
+			const editor = vscode.window.activeTextEditor;
+			if (editor && hlsClient.isHaskellDocument(editor.document)) {
+				hlsClient.invalidate(editor.document);
+				refreshHaskellFunctionsTree(editor.document);
 			}
 		})
 	);
@@ -322,7 +357,7 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 			for (const f of files) {
 				const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(f));
-				await vscode.window.showTextDocument(doc, { preview: false });
+				await vscode.window.showTextDocument(doc, { preview: true });
 			}
 		})
 	);
@@ -377,6 +412,75 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+	// Command: delete every run recorded for one design
+	context.subscriptions.push(
+		vscode.commands.registerCommand('clash-toolkit.deleteDesignHistory', async (item) => {
+			if (!(item instanceof FunctionGroupNode)) { return; }
+			const count = item.runIds.length;
+			const answer = await vscode.window.showWarningMessage(
+				`Delete all ${count} run${count === 1 ? '' : 's'} of ${item.qualifiedName}?`,
+				{
+					modal: true,
+					detail:
+						`This removes ${item.functionRoot} from disk — the generated Verilog, `
+						+ 'netlists and diagrams of every run. It cannot be undone.',
+				},
+				'Delete'
+			);
+			if (answer !== 'Delete') { return; }
+			try {
+				await fsp.rm(item.functionRoot, { recursive: true, force: true });
+				runHistoryTreeProvider.refresh();
+				outputChannel.appendLine(`Deleted run history for ${item.qualifiedName}`);
+			} catch (e) {
+				const msg = e instanceof Error ? e.message : String(e);
+				vscode.window.showErrorMessage(`Failed to delete history for ${item.qualifiedName}: ${msg}`);
+			}
+		})
+	);
+
+	// Command: delete the whole run history.
+	// The synthesis cabal project lives under .clash/ too and is not run
+	// output, so this deletes what the History section lists and nothing else.
+	context.subscriptions.push(
+		vscode.commands.registerCommand('clash-toolkit.clearRunHistory', async () => {
+			const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+			if (!wsRoot) { return; }
+			const clashDir = path.join(wsRoot, '.clash');
+			const designs = await listDesignDirs(clashDir);
+			if (designs.length === 0) {
+				vscode.window.showInformationMessage('No run history to clear.');
+				return;
+			}
+			const answer = await vscode.window.showWarningMessage(
+				`Delete the run history of all ${designs.length} design${designs.length === 1 ? '' : 's'}?`,
+				{
+					modal: true,
+					detail:
+						`${designs.join(', ')}\n\nThis removes every run's generated Verilog, `
+						+ 'netlists and diagrams from disk. The synthesis cabal project is kept. '
+						+ 'It cannot be undone.',
+				},
+				'Delete All'
+			);
+			if (answer !== 'Delete All') { return; }
+			const failed: string[] = [];
+			for (const design of designs) {
+				try {
+					await fsp.rm(path.join(clashDir, design), { recursive: true, force: true });
+				} catch (e) {
+					failed.push(`${design} (${e instanceof Error ? e.message : String(e)})`);
+				}
+			}
+			runHistoryTreeProvider.refresh();
+			if (failed.length > 0) {
+				vscode.window.showErrorMessage(`Could not delete: ${failed.join('; ')}`);
+			} else {
+				outputChannel.appendLine(`Cleared run history: ${designs.length} design(s)`);
+			}
+		})
+	);
+
 	// Command: navigate to a function (used by tree item clicks)
 	context.subscriptions.push(
 		vscode.commands.registerCommand('clash-toolkit.goToFunction', async (info) => {
@@ -410,7 +514,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	outputChannel.appendLine('Clash Toolkit activated');
 	outputChannel.appendLine('Make sure Haskell Language Server is running for full functionality');
-	
+
 	// Validate toolchain on activation (after a brief delay for direnv).
 	// Tracked as a disposable so deactivate() cancels it — otherwise the
 	// callback can fire after `outputChannel` is disposed (e.g. during test
@@ -429,7 +533,7 @@ export function activate(context: vscode.ExtensionContext) {
 			dispose: () => { cancelled = true; clearTimeout(handle); }
 		});
 	}
-	
+
 	const logger = getLogger();
 	if (logger) {
 		logger.info('Extension activated successfully');
@@ -472,7 +576,11 @@ async function refreshHaskellFunctionsTree(doc: vscode.TextDocument): Promise<vo
 			availability.reason ?? 'extension-inactive',
 			doc.fileName,
 		);
-		haskellFunctionsTreeView.message = `⚠ ${availability.message}`;
+		clashTreeProvider.setSectionStatus(
+			'functions',
+			'⚠ HLS unavailable',
+			availability.message,
+		);
 		return;
 	}
 
@@ -483,9 +591,12 @@ async function refreshHaskellFunctionsTree(doc: vscode.TextDocument): Promise<vo
 	if (superseded()) { return; }
 	if (symbols.length === 0) {
 		haskellFunctionsTreeProvider.setNoSymbolsYet(doc.fileName);
-		haskellFunctionsTreeView.message =
-			'⏳ HLS has not returned symbols for this file yet — it may still be loading the ' +
-			'project. This updates when HLS reports on the file, or use Refresh.';
+		clashTreeProvider.setSectionStatus(
+			'functions',
+			'⏳ waiting for HLS',
+			'HLS has not returned symbols for this file yet — it may still be loading the ' +
+			'project. This updates when HLS reports on the file, or use Refresh.',
+		);
 		return;
 	}
 
@@ -495,7 +606,7 @@ async function refreshHaskellFunctionsTree(doc: vscode.TextDocument): Promise<vo
 	} catch { /* HLS answered but analysis failed; report an empty result */ }
 	if (superseded()) { return; }
 	haskellFunctionsTreeProvider.refresh(functions, doc.fileName);
-	haskellFunctionsTreeView.message = undefined;
+	clashTreeProvider.setSectionStatus('functions', path.basename(doc.fileName));
 }
 
 /**
@@ -605,12 +716,12 @@ function registerCommands(context: vscode.ExtensionContext) {
  */
 async function detectFunctionsCommand() {
 	const logger = getLogger();
-	
+
 	try {
 		if (logger) {
 			await logger.operation('detectFunctionsCommand', 'Starting');
 		}
-		
+
 		outputChannel.show(true);
 		outputChannel.appendLine('='.repeat(60));
 		outputChannel.appendLine('Detecting Functions...');
@@ -655,9 +766,9 @@ async function detectFunctionsCommand() {
 		if (logger) {
 			await logger.debug(`Showing picker with ${functions.length} functions`);
 		}
-		
+
 		const selected = await functionDetector.showFunctionPicker(functions);
-		
+
 		if (logger) {
 			if (selected) {
 				await logger.info(`User selected: ${selected.name}`);
@@ -665,37 +776,37 @@ async function detectFunctionsCommand() {
 				await logger.debug('User cancelled picker');
 			}
 		}
-		
+
 		if (selected) {
 			if (logger) {
 				await logger.debug(`Analyzing function: ${selected.name}`);
 			}
-			
+
 			outputChannel.appendLine('');
 			outputChannel.appendLine('Selected Function Analysis:');
 			outputChannel.appendLine('-'.repeat(60));
 			outputChannel.appendLine(functionDetector.getAnalysis(selected));
-			
+
 			if (logger) {
 				await logger.debug(`Is monomorphic: ${selected.isMonomorphic}`);
 			}
-			
+
 			// If it's monomorphic, offer to synthesize
 			if (selected.isMonomorphic) {
 				if (logger) {
 					await logger.debug('Showing synthesize confirmation dialog');
 				}
-				
+
 				const action = await vscode.window.showInformationMessage(
 					`${selected.name} is synthesizable. Would you like to synthesize it now?`,
 					'Synthesize',
 					'Cancel'
 				);
-				
+
 				if (logger) {
 					await logger.info(`User action: ${action || 'cancelled'}`);
 				}
-				
+
 				if (action === 'Synthesize') {
 					await synthesizeCommand(selected);
 				}
@@ -703,14 +814,14 @@ async function detectFunctionsCommand() {
 				if (logger) {
 					await logger.info('Function is polymorphic - showing info message');
 				}
-				
+
 				vscode.window.showInformationMessage(
 					`${selected.name} is polymorphic and cannot be directly synthesized. ` +
 					'Create a monomorphic wrapper function to synthesize it.'
 				);
 			}
 		}
-		
+
 		if (logger) {
 			await logger.operation('detectFunctionsCommand', 'Completed');
 		}
@@ -719,7 +830,7 @@ async function detectFunctionsCommand() {
 		const message = error instanceof Error ? error.message : String(error);
 		vscode.window.showErrorMessage(`Error detecting functions: ${message}`);
 		outputChannel.appendLine(`ERROR: ${message}`);
-		
+
 		const logger = getLogger();
 		if (logger) {
 			await logger.error('detectFunctionsCommand failed', error);
@@ -754,9 +865,10 @@ export function unwrapFuncArg(arg: unknown): FunctionInfo | undefined {
 async function pickFunction(providedFunc?: FunctionInfo): Promise<FunctionInfo | undefined> {
 	if (providedFunc) { return providedFunc; }
 
-	// Check the Haskell Functions tree selection first — this is what the title-bar
-	// buttons should use when the user has highlighted a function in the sidebar.
-	const treeSelection = haskellFunctionsTreeView?.selection[0];
+	// Check the sidebar selection first — this is what the title-bar buttons
+	// should use when the user has highlighted a function in the Functions
+	// section.  Rows from the other sections are simply not function nodes.
+	const treeSelection = clashTreeView?.selection[0];
 	if (treeSelection instanceof FunctionNode) {
 		return treeSelection.info;
 	}
@@ -880,14 +992,17 @@ async function runYosynsSynthesis(
 		outputChannel.appendLine(`  Wires: ${synthResult.statistics.wireCount ?? 'N/A'}`);
 	}
 
-	// Parse SDC target frequency if available.
-	let sdcFrequencyMHz: number | undefined;
-	if (compileResult.manifest) {
-		sdcFrequencyMHz = await new ClashManifestParser()
-			.parseSdcFrequency(compileResult.manifest.directory);
-		if (sdcFrequencyMHz) {
-			outputChannel.appendLine(`  SDC target: ${sdcFrequencyMHz.toFixed(2)} MHz`);
-		}
+	// The design's clocks come from the Clash manifest — each top-entity clock
+	// port with the period of the domain it declares.  They are a property of
+	// the entity being synthesized, so they are read per run rather than
+	// configured: two top entities in one workspace can run at different
+	// frequencies, and Clash already states both.  Which of them (if any) can
+	// constrain place & route is decided there, not here.
+	const topClocks = compileResult.manifest?.topClocks ?? [];
+	for (const clock of topClocks) {
+		outputChannel.appendLine(
+			`  Clock ${clock.port}: ${clock.frequencyMHz.toFixed(2)} MHz (domain ${clock.domain})`
+		);
 	}
 
 	// Normalise into ModuleSynthesisResult[] so the panel always has data.
@@ -903,7 +1018,7 @@ async function runYosynsSynthesis(
 			errors: synthResult.errors
 		}];
 
-	return { synthResult, moduleResults, topModule, sdcFrequencyMHz, projectDirs };
+	return { synthResult, moduleResults, topModule, topClocks, projectDirs };
 }
 
 /**
@@ -938,6 +1053,7 @@ async function runCompile(
 	progress.report({ message: 'Compiling to Verilog with Clash…', increment: 20 });
 	outputChannel.appendLine('\n=== Step 2: Compiling with Clash ===');
 
+	const buildCfg = vscode.workspace.getConfiguration('clash-toolkit');
 	const compileResult = await clashCompiler.compileToVerilog(wrapperResult.filePath, {
 		workspaceRoot: wsRoot,
 		outputDir: projectDirs.root,
@@ -945,6 +1061,8 @@ async function runCompile(
 		hdlDir: projectDirs.verilog,
 		synthProjectRoot: synthInfo.synthRoot,
 		cabalProjectDir: synthInfo.cabalProjectDir ?? undefined,
+		cabalJobs: buildCfg.get<number | string>('cabalJobs', 'auto'),
+		ghcJobs: buildCfg.get<number | null>('ghcJobs', null) ?? undefined,
 		abortSignal
 	});
 
@@ -1105,7 +1223,7 @@ async function elaborateCommand(providedFunc?: FunctionInfo) {
 	if (!wsRoot) { vscode.window.showErrorMessage('No workspace folder open'); return; }
 
 	const cfg = vscode.workspace.getConfiguration('clash-toolkit');
-	if (!(await toolchain.require('yosys', cfg.get<string>('yosysCommand', 'yosys'), '-V', wsRoot))) { return; }
+	if (!(await toolchain.require('yosys', toolCommand('yosys'), '-V', wsRoot))) { return; }
 
 	const func = await pickFunction(providedFunc);
 	if (!func) { return; }
@@ -1194,7 +1312,7 @@ async function synthesizeCommand(providedFunc?: FunctionInfo) {
 	if (!wsRoot) { vscode.window.showErrorMessage('No workspace folder open'); return; }
 
 	const cfg = vscode.workspace.getConfiguration('clash-toolkit');
-	if (!(await toolchain.require('yosys', cfg.get<string>('yosysCommand', 'yosys'), '-V', wsRoot))) { return; }
+	if (!(await toolchain.require('yosys', toolCommand('yosys'), '-V', wsRoot))) { return; }
 
 	const func = await pickFunction(providedFunc);
 	if (!func) { return; }
@@ -1218,7 +1336,7 @@ async function synthesizeCommand(providedFunc?: FunctionInfo) {
 			const targetFamily = cfg.get<string>('synthesisTarget', 'generic');
 			const customScript = cfg.get<string>(`synthesisScript.${targetFamily}`, '') || undefined;
 			const outOfContext = cfg.get<boolean>('outOfContext', false);
-			const { synthesis: { synthResult, moduleResults, sdcFrequencyMHz, projectDirs } } =
+			const { synthesis: { synthResult, moduleResults, topClocks, projectDirs } } =
 				await runPipeline(
 					func, wsRoot,
 					'synthesize',
@@ -1234,8 +1352,10 @@ async function synthesizeCommand(providedFunc?: FunctionInfo) {
 			outputChannel.appendLine('='.repeat(60));
 			outputChannel.appendLine('✓ Synthesis Complete!');
 			outputChannel.appendLine('='.repeat(60));
-			if (sdcFrequencyMHz) {
-				outputChannel.appendLine(`  Target: ${sdcFrequencyMHz.toFixed(2)} MHz`);
+			for (const clock of topClocks) {
+				outputChannel.appendLine(
+					`  Clock ${clock.port}: ${clock.frequencyMHz.toFixed(2)} MHz`
+				);
 			}
 			if (moduleResults.length > 1) {
 				outputChannel.appendLine('');
@@ -1257,7 +1377,7 @@ async function synthesizeCommand(providedFunc?: FunctionInfo) {
 				cellCount: synthResult.statistics?.cellCount,
 				wireCount: synthResult.statistics?.wireCount,
 				logicDepth: synthResult.statistics?.logicDepth,
-				sdcFrequencyMHz,
+				clocks: topClocks,
 				moduleCount: moduleResults.length,
 			});
 
@@ -1285,7 +1405,7 @@ async function placeAndRouteCommand(providedFunc?: FunctionInfo) {
 	if (!wsRoot) { vscode.window.showErrorMessage('No workspace folder open'); return; }
 
 	const cfg = vscode.workspace.getConfiguration('clash-toolkit');
-	if (!(await toolchain.require('yosys', cfg.get<string>('yosysCommand', 'yosys'), '-V', wsRoot))) { return; }
+	if (!(await toolchain.require('yosys', toolCommand('yosys'), '-V', wsRoot))) { return; }
 
 	// Determine nextpnr family from the configured synthesis target
 	const synthTarget = cfg.get<string>('synthesisTarget', 'generic');
@@ -1299,7 +1419,7 @@ async function placeAndRouteCommand(providedFunc?: FunctionInfo) {
 		return;
 	}
 
-	if (!(await toolchain.require(familyInfo.binary, familyInfo.binary, '--version', wsRoot))) { return; }
+	if (!(await toolchain.require(familyInfo.binary, toolCommand(familyInfo.binary), '--version', wsRoot))) { return; }
 
 	const func = await pickFunction(providedFunc);
 	if (!func) { return; }
@@ -1344,7 +1464,7 @@ async function placeAndRouteCommand(providedFunc?: FunctionInfo) {
 			// Steps 1–3: Clash + Yosys pipeline.
 			// PnR always uses whole-design synthesis (nextpnr needs a merged netlist).
 			const customScript = cfg.get<string>(`synthesisScript.${synthTarget}`, '') || undefined;
-			const { synthesis: { synthResult, moduleResults, topModule, sdcFrequencyMHz, projectDirs } } =
+			const { compiled: { compileResult }, synthesis: { synthResult, moduleResults, topModule, projectDirs } } =
 				await runPipeline(func, wsRoot, 'synthesize', false, synthTarget, progress, customScript, runDirs.runId, abortController.signal);
 
 			const pnrInProgressLabel = `Synthesis — ${func.name} (P&R running…)`;
@@ -1360,13 +1480,22 @@ async function placeAndRouteCommand(providedFunc?: FunctionInfo) {
 
 			// Build family-specific options.
 			//
-			// Target frequency precedence: an SDC constraint always wins.  If no
-			// SDC is present we fall back to the `pnrTargetFrequencyMHz` setting,
-			// which maps to nextpnr's `--freq` flag so analysis runs without an
-			// SDC still get a meaningful "did we hit the target?" verdict.
-			const userFreq = cfg.get<number | null>('pnrTargetFrequencyMHz', null);
-			const effectiveFreq = sdcFrequencyMHz
-				?? (typeof userFreq === 'number' && userFreq > 0 ? userFreq : undefined);
+			// The target maps to nextpnr's `--freq`, so it has to be this
+			// design's own clock and no other: throws when the top entity is
+			// driven by more than one domain, since one number cannot describe
+			// that, and is undefined for a design with no clock at all — which
+			// nextpnr reports an unconstrained Fmax for.
+			const targetClock = pnrTargetClock(compileResult.manifest);
+			if (targetClock) {
+				outputChannel.appendLine(
+					`Constraining against ${targetClock.port}: ` +
+					`${targetClock.frequencyMHz.toFixed(2)} MHz (domain ${targetClock.domain})`
+				);
+			} else {
+				outputChannel.appendLine(
+					'No clock on the top entity — running nextpnr unconstrained'
+				);
+			}
 
 			const selectedDevice = deviceChoice as import('./nextpnr-types').DeviceOption;
 			const pnrOpts: import('./nextpnr-types').NextpnrOptions = {
@@ -1374,7 +1503,7 @@ async function placeAndRouteCommand(providedFunc?: FunctionInfo) {
 				jsonPath: synthResult.jsonPath,
 				outputDir: projectDirs.nextpnr,
 				topModule,
-				frequency: effectiveFreq,
+				frequency: targetClock?.frequencyMHz,
 				device: selectedDevice.value,
 				packageName: packageChoice?.value,
 				vopt: selectedDevice.vopt ? [selectedDevice.vopt] : undefined,
@@ -1494,8 +1623,8 @@ async function placeAndRouteCommand(providedFunc?: FunctionInfo) {
 		outputChannel.appendLine(`ERROR: ${msg}`);
 		// The banner was set to "(P&R running…)" before the PnR stage; every
 		// failure path lands here, so replace it or it lies indefinitely.
-		if (synthesisResultsView?.message?.includes('P&R running')) {
-			synthesisResultsView.message = `Synthesis — ${func.name} (P&R failed)`;
+		if (clashTreeProvider?.sectionStatus('results')?.includes('P&R running')) {
+			clashTreeProvider.setSectionStatus('results', `Synthesis — ${func.name} (P&R failed)`);
 		}
 		await writeRunMetadata(runDirs, func, 'place-and-route', {
 			target: synthTarget,
@@ -1512,11 +1641,11 @@ export function deactivate() {
 	if (logger) {
 		logger.info('Extension deactivating...');
 	}
-	
+
 	if (outputChannel) {
 		outputChannel.dispose();
 	}
-	
+
 	if (logger) {
 		logger.info('Extension deactivated');
 	}

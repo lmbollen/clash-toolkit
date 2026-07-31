@@ -13,7 +13,7 @@ import {
 import { ComponentInfo } from './clash-manifest-types';
 import { getLogger } from './file-logger';
 import { getDefaultScript, resolveScript } from './synthesis-targets';
-import { splitCommand } from './toolchain';
+import { toolInvocation } from './toolchain';
 import { resolveTool, toolSpawnEnv } from './tool-provider';
 import { fireDiagramRender } from './netlist-diagram';
 
@@ -33,17 +33,15 @@ export interface PerModuleHierarchy {
 
 /**
  * Resolve the yosys executable + leading args from the user's
- * `clash-toolkit.yosysCommand` setting — the same command the pre-flight
+ * `clash-toolkit.toolCommands` overrides — the same command the pre-flight
  * toolchain check probes, so "check passes but synthesis spawns a different
  * yosys" cannot happen.
  */
 function resolveYosysCommand(): { cmd: string; baseArgs: string[] } {
-	const raw = vscode.workspace.getConfiguration('clash-toolkit')
-		.get<string>('yosysCommand', 'yosys');
-	const parts = splitCommand((raw || 'yosys').trim());
+	const { command, args } = toolInvocation('yosys');
 	// Resolve through the managed toolchain: falls back to a downloaded copy
 	// when the user has no yosys on PATH, otherwise returns the name unchanged.
-	return { cmd: resolveTool(parts[0] || 'yosys'), baseArgs: parts.slice(1) };
+	return { cmd: resolveTool(command), baseArgs: args };
 }
 
 /**

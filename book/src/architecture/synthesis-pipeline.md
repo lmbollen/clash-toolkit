@@ -76,4 +76,4 @@ the netlist's dependency modules don't win.
 
 `NextpnrRunner.placeAndRoute()` builds command-line arguments for the selected FPGA family and device, runs nextpnr, and parses timing and utilization from stdout.
 
-SDC-derived frequency is passed via `--freq` when available.
+The manifest-derived target frequency is passed via `--freq` when the top entity has a clock.

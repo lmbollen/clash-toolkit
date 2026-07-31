@@ -2,7 +2,7 @@
 
 The main commands are available from the VS Code command palette
 (`Ctrl+Shift+P`). Commands that act on a specific tree item are reachable only
-from the **Clash Synthesis** sidebar — its view title bars and right-click
+from the **Clash Synthesis** sidebar — its view title bar and right-click
 menus — and are hidden from the palette.
 
 ## Main flow
@@ -26,21 +26,24 @@ menus — and are hidden from the palette.
 
 | Command | Where | Description |
 |---------|-------|-------------|
-| **Clash: Refresh Haskell Functions** | Haskell Functions title bar | Re-scan the workspace for functions |
-| **Clash: Go To Function** | Click a Haskell Functions item | Jump to the function's definition |
-| **Clash: Open Settings** | Gear icon in all three title bars | Open the settings panel (synthesis target and scripts) |
-| **Clash: Open Synthesized Verilog** | Synthesis Results item, inline icon | Open the Yosys-synthesized Verilog |
-| **Clash: View Module Diagram** | Synthesis Results item, inline icon | Open a module's schematic SVG |
+| **Clash: Refresh** | Sidebar title bar | Re-read the active file's functions *and* the runs on disk |
+| **Clash: Refresh Haskell Functions** | Palette | Re-scan the active file for functions only |
+| **Clash: Go To Function** | Click a Functions item | Jump to the function's definition |
+| **Clash: Open Settings** | Gear icon in the title bar | Open the settings panel (synthesis target and scripts) |
+| **Clash: Open Synthesized Verilog** | Results item, inline icon | Open the Yosys-synthesized Verilog |
+| **Clash: View Module Diagram** | Results item, inline icon | Open a module's schematic SVG |
 | **Clash: View Component Diagram** | Click a sub-component row under a module | Open that component's own schematic (rendered on first open) |
-| **Clash: Refresh Run History** | Run History title bar | Re-read past runs from `.clash/` |
-| **Clash: Show Run in Synthesis Results** | Click a Run History item | Load a past run into the results view |
-| **Clash: Open Verilog (History)** | Run History item, inline icon | Open a past run's Verilog |
-| **Clash: View Diagram (History)** | Run History item, inline icon | Open a past run's diagram |
-| **Clash: Delete Run** | Run History item, inline icon | Delete a run's output directory |
+| **Clash: Refresh Run History** | Palette | Re-read past runs from `.clash/` only |
+| **Clash: Show Run in Synthesis Results** | Click a History item | Load a past run into the Results section |
+| **Clash: Open Verilog (History)** | History item, inline icon | Open a past run's Verilog |
+| **Clash: View Diagram (History)** | History item, inline icon | Open a past run's diagram |
+| **Clash: Delete Run** | History run row, inline icon | Delete that run's output directory |
+| **Clash: Delete Design History** | History design row, inline icon | Delete every run recorded for that design |
+| **Clash: Clear Run History** | Trash icon on the History header | Delete the run history of every design |
 
 The four main-flow commands (**Generate Verilog**, **Elaborate**, **Synthesize**,
-**Place & Route**) also appear as icons in the **Haskell Functions** title bar,
-so you can drive the whole flow from the sidebar without the palette.
+**Place & Route**) also appear as icons in the sidebar title bar, so you can
+drive the whole flow from the sidebar without the palette.
 
 ## Detect Functions
 
@@ -75,7 +78,7 @@ The full FPGA implementation pipeline. After detecting and selecting a function:
 1. Generates wrapper module
 2. Compiles to Verilog with Clash
 3. Synthesizes with Yosys for the configured target
-4. Parses SDC files for target clock frequency
+4. Reads the top entity's target clock frequency from the Clash manifest
 5. Runs the target's `nextpnr-*` binary with the selected device and package
 
 The FPGA family comes from the `synthesisTarget` setting, **not** from a prompt.

@@ -40,7 +40,7 @@ Highlights:
 
 - [Getting Started](book/src/guide/getting-started.md) — prerequisites, first synthesis
 - [Commands](book/src/guide/commands.md) — every command and what it runs
-- [The Sidebar](book/src/guide/sidebar.md) — the three views and what their rows mean
+- [The Sidebar](book/src/guide/sidebar.md) — the one view, its three sections, and what their rows mean
 - [Circuit Diagrams](book/src/guide/circuit-diagrams.md) — schematics and drilling into components
 - [Configuration](book/src/guide/configuration.md) — settings reference
 - [Architecture Overview](book/src/architecture/overview.md) — source layout and data flow

@@ -1,21 +1,30 @@
 # The Sidebar
 
-The extension contributes a **Clash Synthesis** container to the activity bar,
-holding three views. Together they cover the whole workflow: pick a function,
-inspect what synthesis produced, and go back to earlier runs.
+The extension contributes a **Clash Synthesis** view to the activity bar: one
+tree with three sections, covering the whole workflow — pick a function, inspect
+what synthesis produced, and go back to earlier runs.
 
 ```
 Clash Synthesis
-├─ Haskell Functions     ← what you can synthesize
-├─ Synthesis Results     ← what the last run produced
-└─ Run History           ← every previous run, on disk
+├─ Functions     ← what you can synthesize
+├─ Results       ← what the last run produced
+└─ History       ← every previous run, on disk
 ```
+
+Each section header carries a status of its own: which file's functions are
+listed, which run is loaded into Results, or why HLS has nothing to say. Hover a
+header for the long form. Sections collapse independently and stay that way.
+
+One view means one title bar. It holds the four main-flow actions —
+**Generate Verilog**, **Elaborate**, **Synthesize**, **Place & Route** — plus
+**Refresh** and **Open Settings**. Refresh re-reads everything that comes from
+outside the extension: the active file's functions and the runs on disk.
 
 Most of the extension's commands live here rather than in the command palette,
 because they act on a specific tree item. See [Commands](commands.md) for the
 full list.
 
-## Haskell Functions
+## Functions
 
 Shows the functions in the **currently active Haskell file**, split into two
 expandable sections with counts:
@@ -49,13 +58,9 @@ The extension starts the Haskell extension itself if it is installed but idle, a
 re-checks automatically when HLS publishes diagnostics for the file it is showing —
 that is the only signal another extension can observe, since HLS exposes no
 readiness API. If a file's functions still don't appear after HLS has settled, use
-**Clash: Refresh Haskell Functions** in the title bar.
+**Refresh** in the title bar.
 
-The title bar also carries the four main-flow actions — **Generate Verilog**,
-**Elaborate**, **Synthesize**, and **Place & Route** — so you can drive a run
-without touching the palette.
-
-## Synthesis Results
+## Results
 
 Populated by the most recent Elaborate, Synthesize, or Place & Route run.
 
@@ -89,7 +94,7 @@ omitted rather than shown as `0 / 0`.
 > keeping them would leave stale Fmax and utilization figures on screen next to
 > fresh synthesis results.
 
-## Run History
+## History
 
 Every run is written to its own timestamped directory under `.clash/`, so
 nothing is overwritten. This view reads them back from disk — including runs
@@ -110,18 +115,29 @@ from the recorded outcome. Hovering shows the full timestamp, target, cells, and
 Fmax. Runs whose `run.json` is missing or unreadable still appear, marked
 *no metadata*.
 
-**Clicking a run loads it back into Synthesis Results**, so you can inspect an
-old run exactly as if it had just finished — the view's banner labels which run
-is being shown.
+**Clicking a run loads it back into Results**, so you can inspect an old run
+exactly as if it had just finished — the Results header labels which run is
+being shown.
 
 Inline icons differ by row type:
 
+- On the **History header**: clear the whole history — every design's runs.
+- On a **design** row: delete that design's history, all of its runs at once.
 - On a **run** row: delete the run, which removes its output directory from disk.
 - On a **module** row: open that module's Verilog, or its diagram — each icon
   appears only when the artefact exists on disk.
 
-Use **Clash: Refresh Run History** in the title bar after changing `.clash/`
-outside the editor. The `synth-project/` directory is skipped when enumerating
+Every deletion asks first, saying what will be removed, and takes the files with
+it — these are directories under `.clash/`, not entries in a list. The generated
+cabal project in `.clash/synth-project/` is never touched; it is not run output.
+
+> A module row's Verilog is the file Clash generated for **that component**.
+> Clash writes one directory per component under `02-verilog/`, so a component
+> that produced no Verilog of its own simply has no icon.
+
+Use **Refresh** in the title bar after changing `.clash/` outside the editor
+(**Clash: Refresh Run History** in the palette refreshes only this section). The
+`synth-project/` directory is skipped when enumerating
 functions, since it holds the generated cabal project rather than run output.
 
 See [Output Directory Structure](../architecture/directory-structure.md) for the

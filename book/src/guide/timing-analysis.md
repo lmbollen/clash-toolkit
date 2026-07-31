@@ -13,17 +13,31 @@ After place & route with nextpnr, the extension reports timing information.
 
 The **routing overhead** (difference between pre-routing and post-routing frequency) is typically 15–30% and is normal.
 
-## SDC Frequency
+## Target Frequency
 
-The extension automatically reads Clash-generated `.sdc` files from the manifest directory. These files contain clock constraints like:
+The frequency nextpnr is constrained against comes from the **Clash manifest**,
+which states everything needed: which top-entity ports are clocks, which domain
+each one is in, and every domain's period. A top entity whose clock port is in
+`Dom50` (`period: 20000` ps) is placed and routed against 50 MHz, passed as
+`--freq`.
 
-```
-create_clock -name {CLK} -period 20.000 -waveform {0.000 10.000} [get_ports {CLK}]
-```
+This is deliberately not a setting. The target is a property of the entity being
+synthesized — two top entities in one workspace can run at different frequencies,
+and the manifest already states both.
 
-The period (in nanoseconds) is converted to a frequency in MHz and passed to nextpnr via the `--freq` flag. For example, a period of 20ns yields a 50 MHz target.
+Nothing is guessed around, because the number becomes a verdict: a frequency
+belonging to some other part of the design would have place & route report
+**constraints met** about a constraint the design never had. So:
 
-If no SDC file is found, no frequency constraint is applied.
+| The manifest says | What happens |
+|---|---|
+| One clock domain across the top entity's clock ports | That domain's period is the target |
+| No clock ports at all | No `--freq` — nextpnr reports an unconstrained Fmax, which is what a combinational design has |
+| Clock ports in **two or more** domains | **Place & route stops**, naming each clock and its frequency. One `--freq` covers the whole design, so no single number can be met by both |
+| A clock port with no domain, a domain the manifest never defines, or a domain without a usable period | **The manifest is rejected** when parsed — it disagrees with itself |
+
+> For a multi-clock design, synthesis and elaboration still work normally; it is
+> only place & route that has nothing to constrain against.
 
 ## Resource Utilization
 
