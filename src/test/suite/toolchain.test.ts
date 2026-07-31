@@ -1,6 +1,12 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { ToolchainChecker, resolveToolCommand, splitCommand } from '../../toolchain';
+import {
+	ToolchainChecker,
+	resolveToolCommand,
+	splitCommand,
+	toolCommand,
+	toolInvocation,
+} from '../../toolchain';
 
 suite('Toolchain Checker Test Suite', () => {
 	let outputChannel: vscode.OutputChannel;
@@ -73,6 +79,56 @@ suite('Toolchain Checker Test Suite', () => {
 		assert.ok(summary.includes('✓'), 'Summary should have a check mark');
 		assert.ok(summary.includes('✗'), 'Summary should have an X mark');
 	});
+	/**
+	 * The precedence a configured override actually goes through, read from
+	 * real settings rather than a fake: `toolCommands`, then the deprecated
+	 * `yosysCommand`, then the tool's own name. Written to Global scope so the
+	 * test host's isolated user settings take it and the repo is untouched.
+	 */
+	suite('resolving a configured command', () => {
+		const cfg = () => vscode.workspace.getConfiguration('clash-toolkit');
+		const global = vscode.ConfigurationTarget.Global;
+
+		async function set(toolCommands?: Record<string, string>, yosysCommand?: string) {
+			await cfg().update('toolCommands', toolCommands, global);
+			await cfg().update('yosysCommand', yosysCommand, global);
+		}
+
+		teardown(async () => { await set(undefined, undefined); });
+
+		test('an unconfigured tool runs by its own name', async () => {
+			await set();
+			assert.strictEqual(toolCommand('yosys'), 'yosys');
+			assert.strictEqual(toolCommand('nextpnr-ecp5'), 'nextpnr-ecp5');
+		});
+
+		test('toolCommands is used when it names the tool', async () => {
+			await set({ 'nextpnr-ice40': '/opt/bin/nextpnr-ice40' });
+			assert.strictEqual(toolCommand('nextpnr-ice40'), '/opt/bin/nextpnr-ice40');
+			assert.strictEqual(toolCommand('yosys'), 'yosys', 'other tools are unaffected');
+		});
+
+		// Deprecated, not dropped: someone's existing setting keeps working.
+		test('the deprecated yosysCommand still applies to yosys alone', async () => {
+			await set(undefined, 'wsl yosys');
+			assert.strictEqual(toolCommand('yosys'), 'wsl yosys');
+			assert.deepStrictEqual(toolInvocation('yosys'), { command: 'wsl', args: ['yosys'] });
+			assert.strictEqual(toolCommand('cabal'), 'cabal');
+		});
+
+		test('toolCommands wins when both name yosys', async () => {
+			await set({ yosys: '/opt/bin/yosys' }, 'wsl yosys');
+			assert.strictEqual(toolCommand('yosys'), '/opt/bin/yosys');
+		});
+
+		// Its declared default is "yosys", which is not an override — treating
+		// it as one would mask a toolCommands entry with the default value.
+		test('yosysCommand left at its default is not an override', async () => {
+			await set({ yosys: '/opt/bin/yosys' }, 'yosys');
+			assert.strictEqual(toolCommand('yosys'), '/opt/bin/yosys');
+		});
+	});
+
 	// Every tool the extension spawns is named by its own id, so an absent
 	// override has to mean "run it by name" — that is what lets PATH detection
 	// and the managed download take over.

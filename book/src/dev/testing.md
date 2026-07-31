@@ -12,6 +12,7 @@ All tests live under `src/test/suite/` and use **Mocha** in TDD mode (`suite` / 
 | `diagram-tabs.test.ts` | Unit | Diagrams reuse one preview tab; pinned ones are kept |
 | `gitignore.test.ts` | Unit | When the `.clash/` gitignore offer is made and what it writes |
 | `run-history.test.ts` | Unit | Reading past runs off disk; which directories count as history |
+| `contributions.test.ts` | Unit | package.json contributions match what the extension registers |
 | `synthesis-features.test.ts` | Unit | Commands, configuration, synthesis types |
 | `synthesis-targets.test.ts` | Unit | Target registry, default/resolved scripts, script diffing, and that the installed Yosys supports every offered target |
 | `code-actions.test.ts` | Unit | Code action provider for Haskell functions |
