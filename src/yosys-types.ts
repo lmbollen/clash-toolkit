@@ -27,6 +27,19 @@ export interface YosysOptions {
 	/** User-customized synthesis script template. Overrides the default for targetFamily. */
 	customScript?: string;
 
+	/**
+	 * User-customized out-of-context script template, used instead of the
+	 * built-in one when the per-component synthesis flow runs. The target's
+	 * `customScript` does not apply on that path — it has no `synth_*` step.
+	 */
+	outOfContextScript?: string;
+
+	/**
+	 * How many components a per-module pass may synthesize at once
+	 * (`clash-toolkit.yosysJobs`). `auto`/unset derives it from the machine.
+	 */
+	yosysJobs?: number | string | null;
+
 	/** Abort signal — cancels the run by killing the yosys process. */
 	abortSignal?: AbortSignal;
 }

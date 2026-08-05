@@ -37,20 +37,55 @@ Default for **Synthesize** and always used for **Place & Route**. Generates a si
 
 ### Per-module synthesis (`synthesizePerModule`)
 
-Used by **Synthesize** when `outOfContext` is enabled. Each component in the dependency graph is synthesized independently with its own directory under `per-module/<name>/`:
+Used by **Synthesize** when `outOfContext` is enabled. Each component in the dependency graph is synthesized independently with its own directory under `per-module/<name>/`, from the `outOfContextScript` template — its own setting, separate from `synthesisScript.<target>`, since this path issues no `synth_*` command at all:
 
-1. Dependencies' Verilog files are read (not synthesized) so `hierarchy -check` passes
-2. The component is flattened and optimized standalone — `proc`, `flatten`,
-   `opt -purge`, `memory -nomap`, `opt`. There is **no** technology mapping: a
-   full `synth` per component hangs on components with large block RAMs
-   (`memory_map` + `abc` on the resulting flip-flop array), so the target's
-   `synth_*` command and any custom script are not used on this path
-3. Each component produces `.il` (RTLIL), `.json` (netlist), `.svg` (diagram), and per-component statistics whose cells are generic, include the component's descendants, and are not comparable with a whole-design run
-4. The component graph is written to `per-module/hierarchy.json` so both sidebar views can present the results as the design hierarchy — a flattened netlist can no longer be asked what it instantiates
+1. The component's **direct** dependencies are read with `read_verilog -lib`,
+   which keeps their port interfaces and discards their bodies. They become
+   black boxes, so `hierarchy -check` passes without their contents being
+   elaborated. One level of stubs is enough however deep the design goes: a
+   black box has no body, so the components *it* instantiates are never
+   referenced
+2. The component is optimized standalone — `proc`, `opt -purge`,
+   `memory -nomap`, `opt`, with **no** `flatten`. There is also **no**
+   technology mapping: a full `synth` per component hangs on components with
+   large block RAMs (`memory_map` + `abc` on the resulting flip-flop array), so
+   the target's `synth_*` command and any custom script are not used on this
+   path
+3. Black-box instances get `setattr -set keep 1 t:<dep>` right after `proc`.
+   Without it, `opt`/`opt_clean`/`clean` delete any instance whose outputs
+   happen to be unused, and the component would silently vanish from the
+   diagram and the cell counts
+4. Each component produces `.il` (RTLIL), `.json` (netlist), `.svg` (diagram),
+   and per-component statistics whose cells are generic, cover only that
+   component's own logic (one opaque cell per sub-component), and are not
+   comparable with a whole-design run
+5. The component graph is written to `per-module/hierarchy.json` so both sidebar views can present the results as the design hierarchy, without either view having to read it back out of a netlist
+
+Because a component's run needs its dependencies' *Verilog* and never their
+*results*, the components have no ordering constraint between them and are all
+dispatched concurrently — see [Concurrency](#concurrency) below.
 
 ### Per-module elaboration (`elaboratePerModule`)
 
-Always used by **Elaborate**. Same per-module loop as `synthesizePerModule`, but the script body is `proc + opt_clean` (no flatten, no tech mapping). The netlist therefore keeps the hierarchy, and the diagram is rendered for the component itself — sub-component instances appear as boxes rather than being expanded.
+Always used by **Elaborate**. Same per-module driver as `synthesizePerModule`, but dependencies are read in full (not `-lib`) and the script body is `proc + opt_clean` (no flatten, no tech mapping). The netlist therefore carries the real sub-module definitions, so its diagram can be drilled into; instances still appear as boxes rather than being expanded.
+
+### Concurrency
+
+Both per-module flows run through `mapPool`, which keeps up to
+`perModuleConcurrency()` Yosys processes in flight. That resolves the
+`clash-toolkit.yosysJobs` setting through the shared `resolveJobCount` in
+`parallelism.ts`:
+`auto` means one per core minus one for the editor, capped at 8 (past that the
+runs contend for memory rather than CPU, and a design with a large block RAM can
+hold a lot of it per process); an explicit number is honoured uncapped; and the
+result never exceeds the component count. The same helper backs `cabalJobs`,
+`ghcJobs` and `nextpnrThreads`.
+
+Results are returned in **input order** regardless of completion order, so
+`moduleResults` stays in the manifest parser's dependency order (leaves first,
+top last) and the "combined" result at the end of the array is still the top
+component. Cancelling stops further components being scheduled; runs already in
+flight are killed through the abort signal inside `runYosysScript`.
 
 ## Diagram Rendering
 

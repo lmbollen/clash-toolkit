@@ -163,22 +163,26 @@ export class SynthesisResultsTreeProvider
  * What out-of-context synthesis actually does, stated wherever its results are
  * shown. Three things make these figures incomparable to a whole-design run, and
  * all three are visible in the script `runPerModulePass` writes
- * (`proc; flatten; opt -purge; memory -nomap; opt`):
+ * (`read_verilog -lib` for dependencies, then
+ * `proc; setattr -set keep; opt -purge; memory -nomap; opt`):
  *
  *   - no technology mapping — no `synth_*` runs, so cells stay generic and the
  *     user's `synthesisTarget` (and any custom script) has no effect here;
- *   - `flatten` inlines each component's dependencies, so a component's figures
- *     include its descendants and per-component numbers overlap;
+ *   - dependencies are read as black boxes and never flattened in, so a
+ *     component's figures cover its own logic and count each sub-component as
+ *     one opaque cell;
  *   - a component never sees the design above it, so nothing is optimized
- *     against its parent.
+ *     against its parent — in particular no constant is propagated in from a
+ *     parent, which is where most of the gap against a whole-design run comes
+ *     from.
  */
 export const OUT_OF_CONTEXT_NOTE =
     '**Synthesized out of context** — on its own, with the components it '
-    + 'instantiates flattened into it, and no technology mapping.\n\n'
+    + 'instantiates left as black boxes, and no technology mapping.\n\n'
     + '- Cells stay generic (`$add`, `$dffe`, …), so the `synthesisTarget` does '
     + 'not apply to these figures.\n'
-    + '- The figures include this component\'s descendants, so per-component '
-    + 'numbers overlap rather than add up.\n'
+    + '- The figures cover this component\'s own logic; each sub-component '
+    + 'counts as one opaque cell rather than being expanded.\n'
     + '- Yosys never sees the design above this component, so nothing is '
     + 'optimized against its parent.\n\n'
     + 'Use them to compare components with each other, not to predict '

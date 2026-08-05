@@ -41,15 +41,58 @@ suite('Clash Tree', () => {
 		return items.map(i => String(i.label));
 	}
 
-	test('root shows the three sections', async () => {
+	/** The three section headers, with the blank spacer rows stripped out. */
+	async function sections(tree: ClashTreeProvider): Promise<unknown[]> {
+		const roots = await tree.getChildren();
+		const items = await Promise.all(roots.map(r => tree.getTreeItem(r)));
+		return roots.filter((_, i) => items[i].contextValue !== 'clashSpacer');
+	}
+
+	test('root shows the three sections, upper-cased', async () => {
 		const { tree } = makeTree();
-		assert.deepStrictEqual(await labels(tree), ['Functions', 'Results', 'History']);
+		const items = await Promise.all(
+			(await sections(tree)).map(s => tree.getTreeItem(s))
+		);
+		assert.deepStrictEqual(
+			items.map(i => String(i.label)),
+			['FUNCTIONS', 'RESULTS', 'HISTORY'],
+		);
+	});
+
+	test('a blank row separates each section from the one above', async () => {
+		// A tree has no separator API, so the gap is a row. It must be inert:
+		// nothing to expand, and no contextValue any menu would match.
+		const { tree } = makeTree();
+		const roots = await tree.getChildren();
+		const items = await Promise.all(roots.map(r => tree.getTreeItem(r)));
+
+		assert.deepStrictEqual(
+			items.map(i => i.contextValue === 'clashSpacer' ? '—' : String(i.label)),
+			['FUNCTIONS', '—', 'RESULTS', '—', 'HISTORY'],
+			'a spacer precedes every section but the first',
+		);
+
+		const spacers = roots.filter((_, i) => items[i].contextValue === 'clashSpacer');
+		for (const spacer of spacers) {
+			const item = await tree.getTreeItem(spacer);
+			assert.strictEqual(String(item.label), '', 'a spacer shows nothing');
+			assert.strictEqual(
+				item.collapsibleState, vscode.TreeItemCollapsibleState.None,
+				'a spacer must not look expandable',
+			);
+			assert.deepStrictEqual(
+				await tree.getChildren(spacer), [], 'a spacer expands to nothing',
+			);
+		}
+
+		// Distinct ids, or VS Code would treat the two rows as one.
+		assert.strictEqual(new Set(spacers.map(s => (s as vscode.TreeItem).id)).size, 2);
 	});
 
 	test('each section delegates to its own provider', async () => {
 		const { tree, results } = makeTree();
 		results.refresh([makeModule('top')]);
-		const [functionsSection, resultsSection, historySection] = await tree.getChildren();
+		const [functionsSection, resultsSection, historySection] = await sections(tree);
 
 		assert.deepStrictEqual(
 			await labels(tree, functionsSection),
@@ -71,7 +114,7 @@ suite('Clash Tree', () => {
 			},
 		})]);
 
-		const [, resultsSection] = await tree.getChildren();
+		const [, resultsSection] = await sections(tree);
 		const [module] = await tree.getChildren(resultsSection);
 		assert.deepStrictEqual(await labels(tree, module), ['$add', '$dff']);
 	});
@@ -87,7 +130,7 @@ suite('Clash Tree', () => {
 			range: new vscode.Range(0, 0, 0, 0),
 		}], '/tmp/Example.hs');
 
-		const [functionsSection] = await tree.getChildren();
+		const [functionsSection] = await sections(tree);
 		const [monoSection] = await tree.getChildren(functionsSection);
 		const [fn] = await tree.getChildren(monoSection) as { info?: { name: string } }[];
 		assert.strictEqual(fn.info?.name, 'topEntity');
@@ -101,7 +144,7 @@ suite('Clash Tree', () => {
 		});
 
 		history.refresh();
-		assert.deepStrictEqual(changed, ['History']);
+		assert.deepStrictEqual(changed, ['HISTORY']);
 	});
 
 	test('section status replaces the per-view banner', async () => {
@@ -111,7 +154,7 @@ suite('Clash Tree', () => {
 		tree.setSectionStatus('results', 'Synthesis — topEntity (P&R running…)');
 		assert.match(tree.sectionStatus('results')!, /P&R running/);
 
-		const [, resultsSection] = await tree.getChildren();
+		const [, resultsSection] = await sections(tree);
 		const item = await tree.getTreeItem(resultsSection);
 		assert.match(String(item.description), /P&R running/);
 

@@ -48,12 +48,32 @@ Three controls:
 - **Target** — the FPGA family, matching `synthesisTarget`. Changing it switches
   which script the editor below is showing.
 - **Out-of-context** — the `outOfContext` toggle (see
-  [Configuration](configuration.md#out-of-context-synthesis)).
-- **Synthesis script** — the Yosys script for the selected target, with the same
-  **modified** badge and **Reset to Default** button as the elaboration script.
+  [Configuration](configuration.md#out-of-context-synthesis)). This *also*
+  switches the editor, see below.
+- **Synthesis script** — the Yosys script the next run will execute, with the
+  same **modified** badge and **Reset to Default** button as the elaboration
+  script.
 
 Because each target has its own script setting, switching the dropdown and
 editing affects only that target. Overrides for the others are left untouched.
+
+### The editor follows the checkbox
+
+Out-of-context synthesis runs a **different script**, not a variant of the
+target's: it stubs the component's sub-components as black boxes and issues no
+`synth_*` command. It is stored separately, as `outOfContextScript`.
+
+So the editor is bound to whichever of the two the current settings would
+actually run. Tick **Out-of-context** and the title changes to *Out-of-Context
+Synthesis Script*, and the contents, the **modified** badge and the diff all
+switch to `outOfContextScript` — along with two extra placeholders, `{libFiles}`
+and `{keepBlackBoxes}`, that only mean anything on that path. Untick it and
+everything switches back to the selected target's script. **Save** and **Reset
+to Default** always act on whichever is on screen.
+
+Unsaved edits survive an unrelated settings change, but switching the target or
+the checkbox reloads the editor — it is bound to a different script at that
+point, so there is nothing for the old text to be saved to.
 
 ## The Inline Diff
 

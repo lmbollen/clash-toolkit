@@ -127,6 +127,56 @@ clean
 write_json "{outputDir}/{outputBaseName}.json"
 `;
 
+const OUT_OF_CONTEXT_SCRIPT = `# Sub-components as black boxes: port interfaces are kept, bodies are ignored,
+# so this run covers {topModule}'s own logic and nothing below it.  Only direct
+# dependencies need stubbing — a black box has no body, so what *it*
+# instantiates is never referenced.
+{libFiles}
+
+# Read {topModule}'s own design files
+{files}
+
+# Elaborate this component alone
+hierarchy -check -top {topModule}
+
+# Convert processes to netlist primitives.
+#
+# No 'flatten': the black boxes above have nothing to inline, and flattening
+# would defeat the point of stubbing them.
+#
+# No technology mapping either: a full 'synth' per component hangs on
+# components holding large block RAMs, because memory_map + abc cannot finish
+# on the resulting flip-flop array.  'memory -nomap' collects memories as $mem
+# cells instead of expanding them.
+proc
+
+# Keep black-box instances even when their outputs are unused — without this,
+# opt/opt_clean/clean delete them and the component silently disappears from
+# the diagram and the cell counts.
+{keepBlackBoxes}
+
+opt -purge
+memory -nomap
+opt
+
+# Machine-readable statistics (parsed by the extension)
+tee -q -o "{outputDir}/stats.json" stat -json
+
+# Report longest topological path (combinational depth)
+tee -o "{outputDir}/logic_depth.txt" ltp -noff
+
+# Write RTLIL
+write_rtlil "{outputDir}/{outputBaseName}.il"
+
+# Strip timing-only cells before further export
+delete */t:$specify2 */t:$specify3
+opt_clean
+clean
+
+# Write JSON netlist — rendered by netlistsvg into this component's diagram.
+write_json "{outputDir}/{outputBaseName}.json"
+`;
+
 // ---------------------------------------------------------------------------
 // Target registry
 // ---------------------------------------------------------------------------
@@ -202,6 +252,18 @@ export function getDefaultElaborationScript(): string {
 }
 
 /**
+ * Default script for one component of an out-of-context run.
+ *
+ * This is a *different script from the target's*, not a variation on it, which
+ * is why it has its own template and its own `outOfContextScript` override
+ * rather than reusing `synthesisScript.<target>`. Editing the ECP5 script does
+ * not change what an out-of-context run does, and vice versa.
+ */
+export function getDefaultOutOfContextScript(): string {
+	return OUT_OF_CONTEXT_SCRIPT;
+}
+
+/**
  * Return the SynthesisTarget for the given id.
  * Throws on unknown ids rather than falling back to generic.
  */
@@ -221,6 +283,11 @@ export function getTarget(targetId: string): SynthesisTarget {
  *
  * `vars.files` should be an array of absolute Verilog paths — each is
  * expanded to a `read_verilog <path>` line.
+ *
+ * `libFiles` and `blackBoxes` only appear in the out-of-context template.
+ * Both resolve to the empty string when absent or empty, which is why a leaf
+ * component — no dependencies, so nothing to stub and nothing to keep — gets a
+ * valid script out of the same template as everything else.
  */
 export function resolveScript(
 	template: string,
@@ -229,13 +296,26 @@ export function resolveScript(
 		topModule: string;
 		outputDir: string;
 		outputBaseName: string;
+		/** Read with `-lib`: interfaces kept, bodies discarded. */
+		libFiles?: string[];
+		/** Module names whose instances must survive optimization. */
+		blackBoxes?: string[];
 	}
 ): string {
 	// Quote each path — unquoted paths containing spaces make yosys fail
 	// with "File `/…/My' not found".
-	const filesBlock = vars.files.map(f => `read_verilog "${f}"`).join('\n');
+	const readLines = (files: string[], flag = '') =>
+		files.map(f => `read_verilog ${flag}"${f}"`).join('\n');
+	const keepLine = vars.blackBoxes?.length
+		? `setattr -set keep 1 ${vars.blackBoxes.map(n => `t:${n}`).join(' ')}`
+		: '';
 	return template
-		.replace(/\{files\}/g, filesBlock)
+		// Before {files}: the substituted text can itself contain "{files}" only
+		// if a path does, which quoting already handles — but do the longer key
+		// first regardless so {libFiles} is never matched as {files}.
+		.replace(/\{libFiles\}/g, readLines(vars.libFiles ?? [], '-lib '))
+		.replace(/\{keepBlackBoxes\}/g, keepLine)
+		.replace(/\{files\}/g, readLines(vars.files))
 		.replace(/\{topModule\}/g, vars.topModule)
 		.replace(/\{outputDir\}/g, vars.outputDir)
 		.replace(/\{outputBaseName\}/g, vars.outputBaseName);

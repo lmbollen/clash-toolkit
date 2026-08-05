@@ -13,6 +13,7 @@ import {
 	CriticalPath,
 	PNR_FAMILIES
 } from './nextpnr-types';
+import { resolveJobCount } from './parallelism';
 import { getLogger } from './file-logger';
 import { toolInvocation } from './toolchain';
 import { resolveTool, toolSpawnEnv } from './tool-provider';
@@ -284,6 +285,11 @@ export class NextpnrRunner {
 		if (options.seed !== undefined) {
 			args.push('--seed', options.seed.toString());
 		}
+
+		// Threading.  Capped at 4 on `auto`: nextpnr only threads some passes,
+		// and past a handful of threads the routing phase stops gaining. A user
+		// who sets nextpnrThreads explicitly is not capped.
+		args.push('--threads', String(resolveJobCount(options.threads, { cap: 4 })));
 
 		// Structured output — always enabled.  The JSON report is our primary
 		// source for timing/utilization; detailed-timing-report adds per-net

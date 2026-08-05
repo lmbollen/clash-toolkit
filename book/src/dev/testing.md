@@ -15,6 +15,8 @@ All tests live under `src/test/suite/` and use **Mocha** in TDD mode (`suite` / 
 | `contributions.test.ts` | Unit | package.json contributions match what the extension registers |
 | `synthesis-features.test.ts` | Unit | Commands, configuration, synthesis types |
 | `synthesis-targets.test.ts` | Unit | Target registry, default/resolved scripts, script diffing, and that the installed Yosys supports every offered target |
+| `parallelism.test.ts` | Unit | Job-count resolution shared by the cabal/GHC/Yosys/nextpnr `*Jobs` settings |
+| `settings-panel.test.ts` | Unit | The settings panel's embedded webview script parses and its custom-script keys resolve |
 | `code-actions.test.ts` | Unit | Code action provider for Haskell functions |
 | `platform-tools.test.ts` | Unit | Yosys/nextpnr tool detection |
 | `tool-provider.test.ts` | Unit | Managed toolchain resolution and install paths |
@@ -23,8 +25,12 @@ All tests live under `src/test/suite/` and use **Mocha** in TDD mode (`suite` / 
 | `nextpnr-runner.test.ts` | Unit | nextpnr child-process lifecycle |
 | `results-tree.test.ts` | Unit | Results tree construction |
 | `clash-tree.test.ts` | Unit | Sidebar sections and routing to their providers |
+| `functions-tree.test.ts` | Unit | The Functions section's empty states: HLS missing, working, or done |
 | `internal-components.test.ts` | Unit | Internal component expansion |
+| `netlist-renderer.test.ts` | Unit | netlistsvg-based diagram rendering |
+| `packaging.test.ts` | Unit | What `vsce` would package: deny list, required files |
 | `pnr-targets.test.ts` | Integration | End-to-end synthesis + place & route per target |
+| `ooc-blackbox.test.ts` | Integration | Out-of-context scripts stub sub-components as black boxes; a real Yosys run proves they survive |
 | `hls-client.test.ts` | Integration | HLS communication |
 | `function-detector.test.ts` | Integration | Function detection from real Haskell files via HLS |
 | `integration.test.ts` | Integration | Per-module synthesis, target frequency, end-to-end flows |

@@ -4,10 +4,32 @@ import {
 	TARGET_IDS,
 	getDefaultScript,
 	getDefaultElaborationScript,
+	getDefaultOutOfContextScript,
 	computeScriptDiff,
 	DiffLine,
 } from './synthesis-targets';
 import { ToolchainChecker, TOOL_DEFINITIONS } from './toolchain';
+
+/**
+ * Which synthesis script the editor is bound to.
+ *
+ * The two are genuinely different scripts, not variants of one: an
+ * out-of-context run stubs its sub-components and never issues a `synth_*`
+ * command, so the target's script has nothing to say about it. They are stored
+ * separately and the out-of-context checkbox switches between them, so what
+ * the editor shows is always what the next run will execute.
+ */
+export type ScriptMode = 'target' | 'ooc';
+
+/** Where a mode's user override lives in settings. */
+export function customScriptKey(mode: ScriptMode, targetId: string): string {
+	return mode === 'ooc' ? 'outOfContextScript' : `synthesisScript.${targetId}`;
+}
+
+/** Webview messages are untrusted input; anything unrecognised is 'target'. */
+function asScriptMode(value: unknown): ScriptMode {
+	return value === 'ooc' ? 'ooc' : 'target';
+}
 
 /**
  * Webview panel for extension settings.
@@ -69,14 +91,20 @@ export class SynthesisSettingsPanel {
 							break;
 						}
 						case 'saveScript': {
+							// The editor is bound to whichever script the current
+							// mode runs, so the mode decides where it is stored.
 							const targetId = message.targetId as string;
+							const mode = asScriptMode(message.mode);
 							const script = message.script as string;
-							const defaultScript = getDefaultScript(targetId);
+							const key = customScriptKey(mode, targetId);
+							const defaultScript = mode === 'ooc'
+								? getDefaultOutOfContextScript()
+								: getDefaultScript(targetId);
 							// If identical to default, clear the override
 							if (script.trim() === defaultScript.trim()) {
-								await cfg.update(`synthesisScript.${targetId}`, undefined, vscode.ConfigurationTarget.Workspace);
+								await cfg.update(key, undefined, vscode.ConfigurationTarget.Workspace);
 							} else {
-								await cfg.update(`synthesisScript.${targetId}`, script, vscode.ConfigurationTarget.Workspace);
+								await cfg.update(key, script, vscode.ConfigurationTarget.Workspace);
 							}
 							// The webview flashes "Saved" only on this confirmation,
 							// not optimistically — cfg.update can fail (e.g. no
@@ -86,7 +114,8 @@ export class SynthesisSettingsPanel {
 						}
 						case 'resetScript': {
 							const targetId = message.targetId as string;
-							await cfg.update(`synthesisScript.${targetId}`, undefined, vscode.ConfigurationTarget.Workspace);
+							const key = customScriptKey(asScriptMode(message.mode), targetId);
+							await cfg.update(key, undefined, vscode.ConfigurationTarget.Workspace);
 							break;
 						}
 						case 'saveElaborationScript': {
@@ -204,8 +233,16 @@ export class SynthesisSettingsPanel {
 		const cfg = vscode.workspace.getConfiguration('clash-toolkit');
 		const targetId = cfg.get<string>('synthesisTarget', 'generic');
 		const outOfContext = cfg.get<boolean>('outOfContext', false);
-		const defaultScript = getDefaultScript(targetId);
-		const customScript = cfg.get<string>(`synthesisScript.${targetId}`, '') || '';
+
+		// The script editor edits whichever script the current mode actually
+		// runs. Out-of-context synthesis does not use the target's script at
+		// all — no `synth_*` step — so showing the target's would describe
+		// something the run never executes.
+		const scriptMode: ScriptMode = outOfContext ? 'ooc' : 'target';
+		const defaultScript = scriptMode === 'ooc'
+			? getDefaultOutOfContextScript()
+			: getDefaultScript(targetId);
+		const customScript = cfg.get<string>(customScriptKey(scriptMode, targetId), '') || '';
 		const diff: DiffLine[] = customScript
 			? computeScriptDiff(defaultScript, customScript)
 			: [];
@@ -224,6 +261,7 @@ export class SynthesisSettingsPanel {
 			type: 'state',
 			targetId,
 			outOfContext,
+			scriptMode,
 			targets,
 			defaultScript,
 			customScript,
@@ -654,10 +692,10 @@ export class SynthesisSettingsPanel {
 
 <div class="field">
   <label>
-    Synthesis Script
+    <span id="script-title">Synthesis Script</span>
     <span class="badge hidden" id="modified-badge">modified</span>
   </label>
-  <div class="description">
+  <div class="description" id="script-description">
     Yosys script for the selected target. Edit below to customise. Use placeholders for dynamic values.
   </div>
   <textarea id="script-editor" spellcheck="false"></textarea>
@@ -667,6 +705,10 @@ export class SynthesisSettingsPanel {
     <code>{topModule}</code> top module name &middot;
     <code>{outputDir}</code> output directory &middot;
     <code>{outputBaseName}</code> base filename
+    <span id="ooc-placeholders" class="hidden">&middot;
+      <code>{libFiles}</code> sub-components read as black boxes &middot;
+      <code>{keepBlackBoxes}</code> keeps those instances through optimization
+    </span>
   </div>
   <div class="btn-row">
     <button class="btn" id="save-btn" onclick="saveScript()">Save</button>
@@ -690,6 +732,7 @@ export class SynthesisSettingsPanel {
 const vscode = acquireVsCodeApi();
 
 let currentTargetId = '';
+let currentScriptMode = '';
 let currentDefault = '';
 let savedTimer = null;
 let elabCurrentDefault = '';
@@ -749,6 +792,7 @@ function saveScript() {
   vscode.postMessage({
     type: 'saveScript',
     targetId: currentTargetId,
+    mode: currentScriptMode,
     script: editor.value,
   });
   // "Saved" is flashed when the host confirms with a saveResult message —
@@ -757,7 +801,11 @@ function saveScript() {
 
 function resetScript() {
   editorDirty = false;
-  vscode.postMessage({ type: 'resetScript', targetId: currentTargetId });
+  vscode.postMessage({
+    type: 'resetScript',
+    targetId: currentTargetId,
+    mode: currentScriptMode,
+  });
 }
 
 // ── Elaboration script editing ──────────────────────────────────────────
@@ -1036,6 +1084,9 @@ function renderState(msg) {
   // Switching target deliberately replaces the script editor's content, so
   // unsaved edits for the previous target are discarded in that case only.
   const targetChanged = currentTargetId !== '' && currentTargetId !== msg.targetId;
+  // Switching the out-of-context checkbox swaps the editor to a different
+  // script entirely, so it has to reload just like a target change does.
+  const modeChanged = currentScriptMode !== '' && currentScriptMode !== msg.scriptMode;
 
   // Populate target dropdown
   const sel = document.getElementById('target-select');
@@ -1054,13 +1105,29 @@ function renderState(msg) {
   // Out-of-context checkbox
   document.getElementById('out-of-context').checked = !!msg.outOfContext;
 
+  // Say which of the two scripts is on screen, so the editor is never
+  // mistaken for describing a run it has no part in.
+  const isOoc = msg.scriptMode === 'ooc';
+  currentScriptMode = msg.scriptMode;
+  document.getElementById('script-title').textContent =
+    isOoc ? 'Out-of-Context Synthesis Script' : 'Synthesis Script';
+  document.getElementById('script-description').textContent = isOoc
+    ? 'Yosys script run once per component while out-of-context is on. The '
+      + 'script of the selected target is not used on this path — there is no '
+      + 'synth_* step — so this is stored separately and editing one does not '
+      + 'affect the other.'
+    : 'Yosys script for the selected target. Edit below to customise. Use '
+      + 'placeholders for dynamic values.';
+  document.getElementById('ooc-placeholders').classList.toggle('hidden', !isOoc);
+
   // Script editor: show custom script if set, otherwise default. Never
   // overwrite unsaved edits — any clash-toolkit config change re-sends
-  // state (e.g. toggling the checkbox above), and clobbering the textarea
-  // would silently destroy the user's work-in-progress.
+  // state, and clobbering the textarea would silently destroy the user's
+  // work-in-progress. A target or mode change is the exception: the editor
+  // is then bound to a different script and has to reload.
   currentDefault = msg.defaultScript;
   const hasCustom = msg.customScript && msg.customScript.length > 0;
-  if (!editorDirty || targetChanged) {
+  if (!editorDirty || targetChanged || modeChanged) {
     editorDirty = false;
     editor.value = hasCustom ? msg.customScript : msg.defaultScript;
 

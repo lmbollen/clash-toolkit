@@ -31,7 +31,13 @@ interface SectionProvider {
     getChildren(element?: unknown): vscode.ProviderResult<unknown[]>;
 }
 
-/** A top-level section header. */
+/**
+ * A top-level section header.
+ *
+ * Labels are upper-case, which is how VS Code styles its own section titles —
+ * at a glance it separates a header from the rows under it, which are all
+ * mixed-case identifiers and paths.
+ */
 class SectionNode extends vscode.TreeItem {
     constructor(
         readonly section: ClashSection,
@@ -39,12 +45,33 @@ class SectionNode extends vscode.TreeItem {
         icon: string,
         collapsibleState: vscode.TreeItemCollapsibleState,
     ) {
-        super(label, collapsibleState);
+        super(label.toUpperCase(), collapsibleState);
         this.iconPath = new vscode.ThemeIcon(icon);
         this.contextValue = `clashSection-${section}`;
         // An id makes VS Code remember whether the user collapsed this section;
         // without one, every refresh would reset it to the state above.
         this.id = `clash-section-${section}`;
+    }
+}
+
+/**
+ * The blank row that precedes a section.
+ *
+ * A tree has no separator API and no way to space rows apart, so the gap has to
+ * be a row of its own: no label, no icon, nothing to expand. It is inert —
+ * `getChildren` finds no section on it and returns nothing, and no menu matches
+ * its `contextValue` — but it is still a row the user can land on, so it
+ * identifies itself to screen readers as a separator rather than going past as
+ * an unnamed item.
+ */
+class SpacerNode extends vscode.TreeItem {
+    constructor(readonly before: ClashSection) {
+        super('', vscode.TreeItemCollapsibleState.None);
+        this.contextValue = 'clashSpacer';
+        // Stable id for the same reason SectionNode has one: without it VS Code
+        // treats each refresh's spacer as a new row.
+        this.id = `clash-spacer-${before}`;
+        this.accessibilityInformation = { label: 'separator', role: 'separator' };
     }
 }
 
@@ -80,6 +107,15 @@ export class ClashTreeProvider implements vscode.TreeDataProvider<unknown>, vsco
         ),
     ];
 
+    /**
+     * What the root actually contains: the sections, with a blank row before
+     * each one after the first. `sections` stays the three real headers, so
+     * status updates and event routing never have to step over the spacers.
+     */
+    private readonly rootNodes: readonly unknown[] = this.sections.flatMap(
+        (section, i) => i === 0 ? [section] : [new SpacerNode(section.section), section],
+    );
+
     private readonly disposables: vscode.Disposable[] = [];
 
     constructor(
@@ -108,8 +144,10 @@ export class ClashTreeProvider implements vscode.TreeDataProvider<unknown>, vsco
     }
 
     async getChildren(element?: unknown): Promise<unknown[]> {
-        if (!element) { return this.sections; }
+        if (!element) { return [...this.rootNodes]; }
 
+        // A spacer carries no section, so it falls through the guard below and
+        // expands to nothing — which is what makes it inert.
         const section = element instanceof SectionNode
             ? element.section
             : sectionOf(element);

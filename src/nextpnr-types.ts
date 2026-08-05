@@ -169,6 +169,16 @@ export interface NextpnrOptions {
 	seed?: number;
 
 	/**
+	 * Threads for the passes that support them (`--threads`), from
+	 * `clash-toolkit.nextpnrThreads`. `auto`/unset derives it from the machine.
+	 *
+	 * Note that this does not make a run reproducible on its own: the passes
+	 * that thread are the ones whose result can depend on scheduling, so a
+	 * fixed `seed` only pins the outcome at a fixed thread count.
+	 */
+	threads?: number | string | null;
+
+	/**
 	 * Write a routed-layout SVG alongside other outputs.  Handy for
 	 * visualising where the design ended up on the fabric.
 	 */

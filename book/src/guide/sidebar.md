@@ -6,14 +6,24 @@ what synthesis produced, and go back to earlier runs.
 
 ```
 Clash Synthesis
-├─ Functions     ← what you can synthesize
-├─ Results       ← what the last run produced
-└─ History       ← every previous run, on disk
+  FUNCTIONS      ← what you can synthesize
+    …
+
+  RESULTS        ← what the last run produced
+    …
+
+  HISTORY        ← every previous run, on disk
+    …
 ```
 
 Each section header carries a status of its own: which file's functions are
 listed, which run is loaded into Results, or why HLS has nothing to say. Hover a
 header for the long form. Sections collapse independently and stay that way.
+
+Headers are upper-cased and a blank row precedes each one, so a section reads as
+a boundary rather than as one more row among its own contents. A tree has no
+separator API, so those blank rows are real rows — inert ones, with nothing to
+expand and no context menu, announced to screen readers as separators.
 
 One view means one title bar. It holds the four main-flow actions —
 **Generate Verilog**, **Elaborate**, **Synthesize**, **Place & Route** — plus

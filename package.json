@@ -335,7 +335,25 @@
             ],
             "default": null,
             "order": 2,
-            "markdownDescription": "Modules GHC may compile in parallel *within* one package (`--ghc-options=-jN`). Speeds up building your own package, which `cabalJobs` cannot parallelise on its own. Leave blank to let GHC decide (single-threaded).\n\n**Note:** GHC options are part of cabal's build plan, so switching this on or off rebuilds every package in the plan once."
+            "markdownDescription": "Modules GHC may compile in parallel *within* one package (`--ghc-options=-jN`). Speeds up building your own package, which `cabalJobs` cannot parallelise on its own. Leave blank to let GHC decide (single-threaded).\n\nUnlike the other job settings this one is **not** `auto` by default, for two reasons: GHC options are part of cabal's build plan, so switching this on or off rebuilds every package in the plan once; and a Clash design's cost tends to sit in the one module holding `topEntity`, which parallelising across modules cannot split."
+          },
+          "clash-toolkit.yosysJobs": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "default": "auto",
+            "order": 3,
+            "markdownDescription": "How many components Yosys may synthesize at once when **out-of-context** synthesis is on (or when elaborating a multi-component design). Each component is a separate single-threaded Yosys process, and none of them depend on each other's results, so they all run in parallel.\n\n`auto` uses one process per core, less one for the editor, capped at 8 — past that the runs contend for memory rather than CPU. Set a number to override (not capped), or `1` to run them one at a time.\n\nHas no effect on whole-design synthesis, which is a single Yosys process."
+          },
+          "clash-toolkit.nextpnrThreads": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "default": "auto",
+            "order": 4,
+            "markdownDescription": "Threads nextpnr may use for the passes that support them (`--threads`).\n\n`auto` uses one thread per core, less one for the editor, capped at 4 — nextpnr only threads some passes, and routing stops gaining past a handful. Set a number to override (not capped), or `1` to run single-threaded.\n\n**Note:** `--seed` only pins a run's outcome at a fixed thread count, since the threaded passes are the ones whose result can depend on scheduling."
           }
         }
       },
@@ -369,6 +387,13 @@
             "editPresentation": "multilineText",
             "order": 1,
             "markdownDescription": "Custom Yosys script for the Elaboration stage (hierarchy + proc, no technology mapping). Leave empty to use the built-in default.\n\nPlaceholders: `{files}`, `{topModule}`, `{outputDir}`, `{outputBaseName}`"
+          },
+          "clash-toolkit.outOfContextScript": {
+            "type": "string",
+            "default": "",
+            "editPresentation": "multilineText",
+            "order": 2,
+            "markdownDescription": "Custom Yosys script run **once per component** while `#clash-toolkit.outOfContext#` is on. Leave empty to use the built-in default.\n\nThis is a separate script from `synthesisScript.<target>`, not a variant of it: an out-of-context run stubs the component's sub-components as black boxes and issues no `synth_*` command, so the target's script has nothing to say about it. Editing one does not affect the other, and the settings panel switches between them with the out-of-context checkbox.\n\nPlaceholders: `{files}`, `{topModule}`, `{outputDir}`, `{outputBaseName}`, plus `{libFiles}` (sub-components read as black boxes) and `{keepBlackBoxes}` (keeps those instances through optimization — drop it and any instance whose outputs are unused is silently deleted)."
           },
           "clash-toolkit.synthesisScript.generic": {
             "type": "string",

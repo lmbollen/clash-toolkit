@@ -82,7 +82,13 @@ suite('Platform Tools Test Suite', () => {
 
 	test('Nextpnr: buildArgs uses --textcfg for ecp5/generic', () => {
 		const args = NextpnrRunner.buildNextpnrArgs(
-			{ family: 'generic', jsonPath: '/tmp/d.json', outputDir: '/tmp/out', topModule: 'top' },
+			{
+				family: 'generic', jsonPath: '/tmp/d.json', outputDir: '/tmp/out',
+				topModule: 'top',
+				// Pinned so the expected args don't depend on the core count of
+				// the machine running the test.
+				threads: 1,
+			},
 			'/tmp/out/top.config'
 		);
 		// `--timing-allow-fail` is unconditionally appended now; see the
@@ -90,8 +96,28 @@ suite('Platform Tools Test Suite', () => {
 		assert.deepStrictEqual(args, [
 			'--json', '/tmp/d.json',
 			'--textcfg', '/tmp/out/top.config',
+			'--threads', '1',
 			'--timing-allow-fail',
 		]);
+	});
+
+	test('Nextpnr: --threads is always passed, auto-derived unless overridden', () => {
+		const auto = NextpnrRunner.buildNextpnrArgs(
+			{ family: 'generic', jsonPath: '/j.json', outputDir: '/o', topModule: 't' },
+			'/o/t.config'
+		);
+		const n = Number(auto[auto.indexOf('--threads') + 1]);
+		assert.ok(
+			Number.isInteger(n) && n >= 1 && n <= 4,
+			`auto should derive 1..4 threads (capped), got ${n}`
+		);
+
+		// An explicit count is honoured as given, above the auto cap.
+		const explicit = NextpnrRunner.buildNextpnrArgs(
+			{ family: 'generic', jsonPath: '/j.json', outputDir: '/o', topModule: 't', threads: 16 },
+			'/o/t.config'
+		);
+		assert.strictEqual(explicit[explicit.indexOf('--threads') + 1], '16');
 	});
 
 	test('Nextpnr: buildArgs uses --asc for ice40', () => {

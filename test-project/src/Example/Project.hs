@@ -87,7 +87,7 @@ pipelinedSum clk ena = D.delayedFold d1 0 (+) ena clk
 -- for exercising logic-depth reporting in the Elaboration / Synthesis
 -- stages.
 deepChain :: Vec 16 (Unsigned 8) -> Unsigned 8
-deepChain = foldl (+) 0
+deepChain vec = foldl (+) (head vec) (tail vec)
 
 {-# ANN deepChain
   (Synthesize
@@ -97,3 +97,15 @@ deepChain = foldl (+) 0
     }) #-}
 
 {-# OPAQUE deepChain #-}
+
+deepChain2 :: Vec 16 (Unsigned 8) -> Unsigned 8
+deepChain2 = fold (+)
+
+{-# ANN deepChain2
+  (Synthesize
+    { t_name = "deepChain"
+    , t_inputs = [ PortName "XS" ]
+    , t_output = PortName "Y"
+    }) #-}
+
+{-# OPAQUE deepChain2 #-}

@@ -11,8 +11,9 @@ import {
 	YosysError
 } from './yosys-types';
 import { ComponentInfo } from './clash-manifest-types';
+import { JobSetting, resolveJobCount } from './parallelism';
 import { getLogger } from './file-logger';
-import { getDefaultScript, resolveScript } from './synthesis-targets';
+import { getDefaultOutOfContextScript, getDefaultScript, resolveScript } from './synthesis-targets';
 import { toolInvocation } from './toolchain';
 import { resolveTool, toolSpawnEnv } from './tool-provider';
 import { fireDiagramRender } from './netlist-diagram';
@@ -57,6 +58,138 @@ function makeLineSplitter(onLine: (line: string) => void): (chunk: string) => vo
 		buf = lines.pop() ?? '';
 		for (const line of lines) { onLine(line); }
 	};
+}
+
+/**
+ * The `auto` ceiling for per-module Yosys runs. Yosys is single-threaded, so
+ * one process per core is the natural limit; past 8 the runs contend for memory
+ * rather than CPU, and a design with a large block RAM can hold a lot of it per
+ * process. A user who sets `clash-toolkit.yosysJobs` explicitly is not capped.
+ */
+export const YOSYS_AUTO_JOB_CAP = 8;
+
+/**
+ * How many Yosys processes a per-module pass may run at once — `auto` by
+ * default, overridden by `clash-toolkit.yosysJobs`, and never more than there
+ * are components to synthesize.
+ */
+export function perModuleConcurrency(componentCount: number, setting?: JobSetting): number {
+	return resolveJobCount(setting, { cap: YOSYS_AUTO_JOB_CAP, work: componentCount });
+}
+
+/**
+ * Run `fn` over `items` with at most `limit` in flight, returning results in
+ * **input order** regardless of completion order — per-module callers rely on
+ * the components staying in the dependency order the manifest parser produced
+ * (leaves first, top last).
+ */
+async function mapPool<T, R>(
+	items: T[],
+	limit: number,
+	fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+	const results = new Array<R>(items.length);
+	let next = 0;
+	const worker = async (): Promise<void> => {
+		for (;;) {
+			const i = next++;
+			if (i >= items.length) { return; }
+			results[i] = await fn(items[i], i);
+		}
+	};
+	const workers = Array.from(
+		{ length: Math.max(1, Math.min(limit, items.length)) },
+		() => worker()
+	);
+	await Promise.all(workers);
+	return results;
+}
+
+/**
+ * Every Verilog file below `name`, inclusive. Only the elaboration flow needs
+ * this: it reads dependencies in full, so `hierarchy -check` has to be able to
+ * resolve the whole subtree. The synthesis flow stubs its direct dependencies
+ * instead and never looks past them.
+ */
+function collectDepVerilog(
+	name: string,
+	byName: Map<string, ComponentInfo>,
+	visited: Set<string> = new Set()
+): string[] {
+	if (visited.has(name)) { return []; }
+	visited.add(name);
+	const comp = byName.get(name);
+	if (!comp) { return []; }
+	const files: string[] = [];
+	for (const dep of comp.dependencies) {
+		files.push(...collectDepVerilog(dep, byName, visited));
+	}
+	files.push(...comp.verilogFiles);
+	return files;
+}
+
+/**
+ * The Yosys script for one component of a per-module pass.
+ *
+ * Synthesis resolves the out-of-context template — the built-in one, or the
+ * user's `outOfContextScript` when they have edited it. Its dependencies are
+ * read with `read_verilog -lib` (port interfaces kept, bodies discarded), so
+ * they stay opaque black boxes and only this component's own logic is
+ * synthesized. Only **direct** dependencies are stubbed: a black box has no
+ * body, so the components *it* instantiates are never referenced and
+ * `hierarchy -check` never has to resolve them, however deep the design goes.
+ *
+ * Elaboration instead reads the whole subtree in full, because its netlist has
+ * to carry the real sub-module definitions for the diagram to be drilled into.
+ */
+export function buildPerModuleScript(
+	component: ComponentInfo,
+	byName: Map<string, ComponentInfo>,
+	flow: 'synthesize' | 'elaborate',
+	moduleDir: string,
+	outOfContextScript?: string
+): string {
+	if (flow === 'elaborate') {
+		const depVerilog = new Set<string>();
+		for (const dep of component.dependencies) {
+			for (const f of collectDepVerilog(dep, byName)) { depVerilog.add(f); }
+		}
+		let script = `# Per-Module Elaboration: ${component.name}\n\n`;
+		for (const vFile of depVerilog) { script += `read_verilog "${vFile}"\n`; }
+		for (const vFile of component.verilogFiles) { script += `read_verilog "${vFile}"\n`; }
+		script += `\nhierarchy -check -top ${component.name}\n\n`;
+		// Just enough to make the design `write_json`-able; no flatten, so
+		// sub-component instances stay visible.
+		script += `proc\nopt_clean\n\n`;
+		script += `# Machine-readable statistics\n`;
+		script += `tee -q -o "${path.join(moduleDir, 'stats.json')}" stat -json\n`;
+		script += `# Report longest topological path (combinational depth)\n`;
+		script += `tee -o "${path.join(moduleDir, 'logic_depth.txt')}" ltp -noff\n\n`;
+		script += `# Write RTLIL\nwrite_rtlil "${path.join(moduleDir, `${component.name}.il`)}"\n\n`;
+		script += `# Strip timing-only cells\ndelete */t:$specify2 */t:$specify3\nopt_clean\nclean\n`;
+		script += `write_json "${path.join(moduleDir, `${component.name}.json`)}"\n`;
+		return script;
+	}
+
+	// Restricted to components this run knows about: anything else (a vendor
+	// primitive, say) is not ours to stub — we have no Verilog for it.
+	const blackBoxes = component.dependencies.filter(d => byName.has(d));
+	const stubFiles = new Set<string>();
+	for (const dep of blackBoxes) {
+		for (const f of byName.get(dep)?.verilogFiles ?? []) { stubFiles.add(f); }
+	}
+	// A file this component reads in full must not also be stubbed — Clash can
+	// put several components in one file, and the full read has to win.
+	for (const own of component.verilogFiles) { stubFiles.delete(own); }
+
+	return resolveScript(outOfContextScript || getDefaultOutOfContextScript(), {
+		files: component.verilogFiles,
+		libFiles: [...stubFiles],
+		blackBoxes,
+		topModule: component.name,
+		outputDir: moduleDir,
+		outputBaseName: component.name,
+	});
 }
 
 /**
@@ -524,16 +657,22 @@ export class YosysRunner {
 	}
 
 	/**
-	 * Shared loop driving per-module synthesis and per-module elaboration.
+	 * Shared driver for per-module synthesis and per-module elaboration.
 	 * Differences between the two flows:
 	 *
-	 *  - synthesize: `proc\nflatten\nopt -purge\nmemory -nomap\nopt` —
-	 *    each module is flattened so its `.json` is self-contained for
-	 *    consumption by parent synthesis or downstream tooling.
+	 *  - synthesize: sub-components are read `-lib` (interfaces only) so they
+	 *    stay opaque black boxes, and the body is
+	 *    `proc\nsetattr -set keep\nopt -purge\nmemory -nomap\nopt` — no
+	 *    `flatten`, so a component's netlist and figures cover its own logic
+	 *    plus the instances it contains, and nothing below them.
 	 *
-	 *  - elaborate: `proc\nopt_clean` — keeps the module hierarchy intact, so
-	 *    the diagram shows only this component's gates and leaves
-	 *    sub-component instances as boxes.
+	 *  - elaborate: dependencies are read in full and the body is
+	 *    `proc\nopt_clean` — the hierarchy is intact and the sub-component
+	 *    definitions travel in the netlist, so diagrams can be drilled into.
+	 *
+	 * Neither flow has any cross-component data dependency: a component's run
+	 * needs its dependencies' *Verilog*, never their results. So every
+	 * component is dispatched concurrently, bounded by `perModuleConcurrency`.
 	 */
 	private async runPerModulePass(
 		components: ComponentInfo[],
@@ -547,106 +686,44 @@ export class YosysRunner {
 		const isSynth = flow === 'synthesize';
 		const flowLabel = isSynth ? 'Per-Module Synthesis' : 'Per-Module Elaboration';
 		const verb = isSynth ? 'Synthesizing' : 'Elaborating';
+		const jobs = perModuleConcurrency(components.length, options.yosysJobs);
 
 		this.outputChannel.appendLine('');
 		this.outputChannel.appendLine('='.repeat(60));
 		this.outputChannel.appendLine(flowLabel);
-		this.outputChannel.appendLine(`${components.length} components detected`);
+		this.outputChannel.appendLine(
+			`${components.length} components detected — ${verb.toLowerCase()} ` +
+			`${jobs} at a time`
+		);
 		this.outputChannel.appendLine('='.repeat(60));
 
-		const moduleResults: ModuleSynthesisResult[] = [];
 		const perModuleDir = path.join(options.outputDir, 'per-module');
 		await fs.mkdir(perModuleDir, { recursive: true });
 
-		// Build lookup so we can resolve transitive dependency Verilog files
+		// Build lookup so we can resolve dependency Verilog files
 		const byName = new Map(components.map(c => [c.name, c]));
 
 		/**
 		 * The components a component instantiates directly, restricted to ones
 		 * this run actually produced results for — the tree uses this to show
-		 * the design hierarchy even though each netlist has been flattened.
+		 * the design hierarchy without having to read it back out of a netlist.
 		 */
 		const directSubComponents = (c: ComponentInfo): string[] =>
 			c.dependencies.filter(d => byName.has(d));
 
-		const collectDepVerilog = (name: string, visited: Set<string> = new Set()): string[] => {
-			if (visited.has(name)) { return []; }
-			visited.add(name);
-			const comp = byName.get(name);
-			if (!comp) { return []; }
-			const files: string[] = [];
-			for (const dep of comp.dependencies) {
-				files.push(...collectDepVerilog(dep, visited));
-			}
-			files.push(...comp.verilogFiles);
-			return files;
-		};
-
-		for (const component of components) {
-			// Stop scheduling further modules once the user cancels; the
-			// in-flight yosys process is killed via the signal below.
-			if (options.abortSignal?.aborted) {
-				return {
-					success: false,
-					output: '',
-					warnings: [],
-					errors: [{ message: `${flowLabel} cancelled` }],
-					moduleResults
-				};
-			}
-
+		const runComponent = async (component: ComponentInfo): Promise<ModuleSynthesisResult> => {
 			const moduleDir = path.join(perModuleDir, component.name);
 			await fs.mkdir(moduleDir, { recursive: true });
 
 			const startTime = Date.now();
-			this.outputChannel.appendLine(`  ${verb} ${component.name}...`);
 
 			const ilPath = path.join(moduleDir, `${component.name}.il`);
 			const jsonPath = path.join(moduleDir, `${component.name}.json`);
 			const scriptPath = path.join(moduleDir, 'synth.ys');
 
-			let script = `# ${flowLabel}: ${component.name}\n\n`;
-
-			// Read dependency Verilog so hierarchy -check can resolve references
-			const depVerilog = new Set<string>();
-			for (const dep of component.dependencies) {
-				for (const f of collectDepVerilog(dep)) {
-					depVerilog.add(f);
-				}
-			}
-			for (const vFile of depVerilog) {
-				script += `read_verilog "${vFile}"\n`;
-			}
-
-			// Read this component's own Verilog
-			for (const vFile of component.verilogFiles) {
-				script += `read_verilog "${vFile}"\n`;
-			}
-
-			script += `\nhierarchy -check -top ${component.name}\n\n`;
-
-			if (isSynth) {
-				// OOC synthesis: explicit passes that convert processes and
-				// collect memories as $mem cells without expanding them to FF
-				// arrays.  Full `synth` hangs indefinitely on modules
-				// containing large block RAMs (e.g. blockRamU 16 384 entries)
-				// because memory_map + abc cannot finish on the resulting
-				// ~500 k flip-flop circuit.
-				script += `proc\nflatten\nopt -purge\nmemory -nomap\nopt\n\n`;
-			} else {
-				// Elaboration: just enough to make the design `write_json`-able,
-				// no flatten so sub-component instances stay visible in `show`.
-				script += `proc\nopt_clean\n\n`;
-			}
-
-			script += `# Machine-readable statistics\n`;
-			script += `tee -q -o "${path.join(moduleDir, 'stats.json')}" stat -json\n`;
-			script += `# Report longest topological path (combinational depth)\n`;
-			script += `tee -o "${path.join(moduleDir, 'logic_depth.txt')}" ltp -noff\n\n`;
-			script += `# Write RTLIL\nwrite_rtlil "${ilPath}"\n\n`;
-			script += `# Strip timing-only cells\ndelete */t:$specify2 */t:$specify3\nopt_clean\nclean\n`;
-			script += `write_json "${jsonPath}"\n`;
-
+			const script = buildPerModuleScript(
+				component, byName, flow, moduleDir, options.outOfContextScript
+			);
 			await fs.writeFile(scriptPath, script);
 
 			const moduleLogPath = path.join(moduleDir, 'yosys.log');
@@ -664,22 +741,21 @@ export class YosysRunner {
 				} catch (statsErr) {
 					const message = statsErr instanceof Error ? statsErr.message : String(statsErr);
 					this.outputChannel.appendLine(`  ✗ ${component.name}: ${message}`);
-					moduleResults.push({
+					return {
 						name: component.name,
 						success: false,
 						elapsedMs: elapsed,
 						errors: [{ message }]
-					});
-					continue;
+					};
 				}
 				this.outputChannel.appendLine(`  ✓ ${component.name} (${elapsed}ms)`);
-				// Name the module explicitly: an elaborated netlist also holds
-				// this component's dependencies, and it's the component itself
+				// Name the module explicitly: the netlist also carries this
+				// component's black-box stubs, and it's the component itself
 				// we want drawn (sub-instances as boxes).
 				const svgPath = fireDiagramRender(
 					jsonPath, this.outputChannel, component.name
 				);
-				moduleResults.push({
+				return {
 					name: component.name,
 					success: true,
 					netlistPath: jsonPath,
@@ -694,23 +770,52 @@ export class YosysRunner {
 					elapsedMs: elapsed,
 					statistics,
 					errors: []
-				});
-			} else {
-				this.outputChannel.appendLine(`  ✗ ${component.name} failed (${elapsed}ms)`);
-				moduleResults.push({
+				};
+			}
+
+			this.outputChannel.appendLine(`  ✗ ${component.name} failed (${elapsed}ms)`);
+			return {
+				name: component.name,
+				success: false,
+				elapsedMs: elapsed,
+				errors: run.errors.length > 0
+					? run.errors
+					: [{ message: `${flowLabel} of ${component.name} failed with code ${run.code}` }]
+			};
+		};
+
+		// Results come back in component order even though the runs finish out
+		// of order, so `moduleResults` still ends leaves-first / top-last.
+		const moduleResults = await mapPool(components, jobs, async (component) => {
+			// Cancelling stops *scheduling* further components; the runs already
+			// in flight are killed through the abort signal inside runYosysScript.
+			if (options.abortSignal?.aborted) {
+				return {
 					name: component.name,
 					success: false,
-					elapsedMs: elapsed,
-					errors: run.errors.length > 0
-						? run.errors
-						: [{ message: `${flowLabel} of ${component.name} failed with code ${run.code}` }]
-				});
+					elapsedMs: 0,
+					errors: [{ message: `${flowLabel} cancelled` }]
+				} satisfies ModuleSynthesisResult;
 			}
+			return runComponent(component);
+		});
+
+		if (options.abortSignal?.aborted) {
+			return {
+				success: false,
+				output: '',
+				warnings: [],
+				errors: [{ message: `${flowLabel} cancelled` }],
+				// Only what actually completed: the rest are components the pool
+				// never got to, and reporting those as failures would read as if
+				// the cancelled run had found something wrong with them.
+				moduleResults: moduleResults.filter(r => r.success)
+			};
 		}
 
-		// Persist the hierarchy alongside the per-module output. A flattened
-		// netlist can't be asked what it instantiates, so without this file the
-		// Run History view could only ever show a flat list of components.
+		// Persist the hierarchy alongside the per-module output. Reading it back
+		// out of a netlist would mean re-parsing every one of them, so both
+		// sidebar views take the graph from here instead.
 		try {
 			const hierarchy: PerModuleHierarchy = {
 				top: options.topModule,

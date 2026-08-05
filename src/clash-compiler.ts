@@ -5,6 +5,7 @@ import { promises as fs, createWriteStream, WriteStream } from 'fs';
 import { ClashManifestParser } from './clash-manifest-parser';
 import { ParsedClashManifest } from './clash-manifest-types';
 import { getLogger } from './file-logger';
+import { parseJobSetting } from './parallelism';
 import { toolInvocation } from './toolchain';
 
 /**
@@ -56,14 +57,12 @@ export interface ClashCompilationOptions {
  * runs with cabal's own default rather than failing on a bad argument.
  */
 export function resolveCabalJobs(setting: number | string | undefined | null): string | undefined {
-	if (setting === undefined || setting === null || setting === '') { return undefined; }
-	if (typeof setting === 'number') {
-		return Number.isInteger(setting) && setting >= 1 ? String(setting) : undefined;
-	}
-	const value = setting.trim().toLowerCase();
-	if (value === 'auto' || value === 'ncpus' || value === '$ncpus') { return '$ncpus'; }
-	if (/^\d+$/.test(value)) { return Number(value) >= 1 ? value : undefined; }
-	return undefined;
+	// cabal has its own spelling for "one per core" and works out the count
+	// itself, so unlike the other tools this one stays a token rather than
+	// being resolved to a number here.
+	const parsed = parseJobSetting(setting);
+	if (parsed === undefined) { return undefined; }
+	return parsed === 'auto' ? '$ncpus' : String(parsed);
 }
 
 /**

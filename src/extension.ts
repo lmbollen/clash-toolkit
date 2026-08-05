@@ -934,19 +934,19 @@ async function runYosynsSynthesis(
 				'  Each component is synthesized on its own, with the components it'
 			);
 			outputChannel.appendLine(
-				'  instantiates flattened into it, using generic optimization only'
+				'  instantiates left as black boxes, using generic optimization only'
 			);
 			outputChannel.appendLine(
-				'  (proc, flatten, opt, memory -nomap) — no technology mapping, so the'
+				'  (proc, opt, memory -nomap) — no technology mapping, so the target'
 			);
 			outputChannel.appendLine(
-				'  target below and any custom script do not apply to these figures,'
+				'  below and any custom script do not apply to these figures, which'
 			);
 			outputChannel.appendLine(
-				'  which overlap between parent and child and are not comparable with'
+				'  cover each component\'s own logic and are not comparable with a'
 			);
 			outputChannel.appendLine(
-				'  a whole-design run.'
+				'  whole-design run.'
 			);
 		}
 	}
@@ -954,10 +954,13 @@ async function runYosynsSynthesis(
 
 	let synthResult: import('./yosys-types').YosysSynthesisResult;
 
+	const yosysCfg = vscode.workspace.getConfiguration('clash-toolkit');
 	const yosysOpts = {
 		workspaceRoot: wsRoot, outputDir: projectDirs.yosys,
 		topModule, verilogPath: verilogInput, targetFamily,
 		customScript: customScript || undefined,
+		outOfContextScript: yosysCfg.get<string>('outOfContextScript', '') || undefined,
+		yosysJobs: yosysCfg.get<number | string>('yosysJobs', 'auto'),
 		abortSignal
 	} as import('./yosys-types').YosysOptions;
 
@@ -1508,6 +1511,7 @@ async function placeAndRouteCommand(providedFunc?: FunctionInfo) {
 				packageName: packageChoice?.value,
 				vopt: selectedDevice.vopt ? [selectedDevice.vopt] : undefined,
 				routedSvg: cfg.get<boolean>('pnrWriteRoutedSvg', true),
+				threads: cfg.get<number | string>('nextpnrThreads', 'auto'),
 				abortSignal: abortController.signal,
 				progressUpdate: (msg) => progress.report({ message: msg }),
 			};

@@ -275,7 +275,8 @@ suite('Synthesis Results Tree', () => {
 		// comparable with a whole-design run, not just "synthesized alone".
 		assert.match(tooltip, /no technology mapping/);
 		assert.match(tooltip, /synthesisTarget/);
-		assert.match(tooltip, /include this component's descendants/);
+		assert.match(tooltip, /black boxes/);
+		assert.match(tooltip, /one opaque cell/);
 		assert.match(tooltip, /optimized against its parent/);
 	});
 
