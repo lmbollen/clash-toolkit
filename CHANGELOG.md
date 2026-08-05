@@ -5,6 +5,50 @@ All notable changes to **Clash Toolkit** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-05
+
+Out-of-context synthesis now means what it says — each component is judged with
+its sub-components stubbed as black boxes rather than flattened into it — and
+the EDA tools got the same `auto` parallelism treatment cabal got in 0.4.0.
+
+### Added
+- `clash-toolkit.yosysJobs` — how many components Yosys synthesizes at once on
+  the per-component paths. A component's run needs its dependencies' *Verilog*,
+  never their *results*, so there was no reason for the old one-at-a-time loop.
+  `auto` (the default) uses one single-threaded Yosys process per core, less one
+  for the editor, capped at 8 — past that the runs contend for memory rather
+  than CPU. An explicit number is honoured uncapped.
+- `clash-toolkit.nextpnrThreads` — nextpnr's `--threads`, `auto` by default
+  (capped at 4: only some passes thread, and routing stops gaining well before
+  the core count). Note that a fixed `--seed` only pins a run's outcome at a
+  fixed thread count, so set this to `1` for bit-identical results across
+  machines.
+- `clash-toolkit.outOfContextScript` — the per-component synthesis script is now
+  editable, like the whole-design scripts already were. It is a separate script
+  from `synthesisScript.<target>`, not a variant of it: an out-of-context run
+  issues no `synth_*` command, so the target's script has nothing to say about
+  it. It gets two placeholders of its own — `{libFiles}` (the sub-components
+  read as black boxes) and `{keepBlackBoxes}` (keeps those instances through
+  optimization; drop it and an instance whose outputs are unused is silently
+  deleted). The settings panel's script editor follows the **Out-of-context**
+  checkbox, so what it shows is always the script the next run will execute.
+
+### Changed
+- **Out-of-context synthesis stubs sub-components as black boxes instead of
+  flattening them in.** The old `flatten` made each component's figures include
+  its descendants, so per-component numbers overlapped and adding them up meant
+  nothing. Now dependencies are read with `read_verilog -lib` — interfaces kept,
+  bodies discarded — so a component's cells, statistics and diagram cover its
+  own logic, with each sub-component as one opaque cell. The Results and History
+  tooltips describe the new meaning.
+- **Per-component elaboration reads dependencies in full**, so the netlist
+  carries the real sub-module definitions and a component's diagram can be
+  drilled into, rather than dead-ending at an empty box.
+- **Sidebar sections read as sections.** Headers are upper-cased, the way
+  VS Code styles its own, and a blank separator row precedes each one — inert,
+  and announced to screen readers as a separator — so a section boundary no
+  longer looks like one more row among the section's contents.
+
 ## [0.4.0] - 2026-07-31
 
 The sidebar is one view instead of three, cabal builds in parallel, and the
