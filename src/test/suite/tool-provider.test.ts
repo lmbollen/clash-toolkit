@@ -2,7 +2,8 @@ import * as assert from 'assert';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { ManagedToolchain } from '../../tool-provider';
+import { ManagedToolchain, pathKeyOf, suitePathSubdirs } from '../../tool-provider';
+import { describeExitCode } from '../../toolchain';
 
 /**
  * Unit tests for the managed-toolchain resolver. These cover the pure,
@@ -74,5 +75,77 @@ suite('ManagedToolchain Test Suite', () => {
 			status.includes('not installed') || status.includes('unavailable'),
 			`unexpected status line: ${status}`
 		);
+	});
+
+	// ---------------------------------------------------------------
+	// Spawn environment. The Windows rules can't be exercised by running
+	// them here, so the platform-dependent decisions are pure functions
+	// taking the platform explicitly.
+	// ---------------------------------------------------------------
+
+	test('Windows needs lib/ on PATH as well as bin/', () => {
+		// The Windows suite ships no wrapper scripts and keeps its runtime DLLs
+		// in lib/; without that directory on PATH every binary fails to load.
+		assert.deepStrictEqual(suitePathSubdirs('win32'), ['bin', 'lib']);
+		// bin/ comes first so the executables still win over anything in lib/.
+		assert.strictEqual(suitePathSubdirs('win32')[0], 'bin');
+	});
+
+	test('Linux and macOS need only bin/ on PATH', () => {
+		assert.deepStrictEqual(suitePathSubdirs('linux'), ['bin']);
+		assert.deepStrictEqual(suitePathSubdirs('darwin'), ['bin']);
+	});
+
+	test('pathKeyOf reuses the existing casing instead of adding a duplicate', () => {
+		// Windows spells it `Path`; writing `PATH` alongside it would leave the
+		// child with two entries and no defined winner.
+		// eslint-disable-next-line @typescript-eslint/naming-convention -- Windows' own spelling is the point
+		assert.strictEqual(pathKeyOf({ Path: 'C:\\Windows' }), 'Path');
+		assert.strictEqual(pathKeyOf({ PATH: '/usr/bin' }), 'PATH');
+		assert.strictEqual(pathKeyOf({ path: '/usr/bin' }), 'path');
+		// Nothing to reuse — fall back to the POSIX spelling.
+		assert.strictEqual(pathKeyOf({ HOME: '/home/x' }), 'PATH');
+	});
+
+	test('spawnEnv prepends the managed directories for a managed binary', () => {
+		const binDir = path.join(toolchain.location, 'bin');
+		const env = toolchain.spawnEnv(path.join(binDir, 'yosys'));
+		const entries = (env[pathKeyOf(env)] || '').split(path.delimiter);
+		const expected = suitePathSubdirs().map(sub => path.join(toolchain.location, sub));
+		assert.deepStrictEqual(
+			entries.slice(0, expected.length),
+			expected,
+			'managed directories should lead PATH'
+		);
+		assert.ok(
+			entries.length > expected.length,
+			'the inherited PATH should still follow'
+		);
+	});
+
+	test('spawnEnv leaves the environment alone for unmanaged commands', () => {
+		// A tool the user provides themselves must never see a managed install
+		// injected ahead of it.
+		assert.strictEqual(toolchain.spawnEnv('yosys'), process.env);
+		assert.strictEqual(toolchain.spawnEnv(undefined), process.env);
+		assert.strictEqual(toolchain.spawnEnv('/usr/local/bin/yosys'), process.env);
+	});
+
+	// ---------------------------------------------------------------
+	// Exit-code diagnostics
+	// ---------------------------------------------------------------
+
+	test('describeExitCode explains Windows loader failures', () => {
+		// 0xC0000135 — what a managed binary returns when its DLLs aren't on
+		// PATH. It prints nothing, so the code is the only evidence.
+		assert.match(describeExitCode(0xC0000135, 'win32'), /DLL was not found/);
+		assert.match(describeExitCode(0xC000007B, 'win32'), /mismatch/);
+		assert.match(describeExitCode(0xC0000142, 'win32'), /initialise/);
+	});
+
+	test('describeExitCode stays quiet for ordinary and non-Windows exits', () => {
+		assert.strictEqual(describeExitCode(1, 'win32'), '');
+		assert.strictEqual(describeExitCode(null, 'win32'), '');
+		assert.strictEqual(describeExitCode(0xC0000135, 'linux'), '');
 	});
 });

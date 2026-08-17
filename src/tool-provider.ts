@@ -8,6 +8,34 @@ import * as tar from 'tar';
 import { getLogger } from './file-logger';
 
 /**
+ * Suite subdirectories that must be on PATH for a spawned managed binary, most
+ * significant first.
+ *
+ * On Linux and macOS `bin/` holds wrapper scripts that set the rest of the
+ * environment up themselves, so it is enough on its own. The Windows build has
+ * no wrappers — its ~160 runtime DLLs (`libstdc++-6.dll`, `libgcc_s_seh-1.dll`,
+ * `libwinpthread-1.dll`, …) live in `lib/`, not beside the executables — so
+ * `lib/` has to be on PATH too, or every binary dies in the loader with
+ * STATUS_DLL_NOT_FOUND before printing anything. This mirrors what the suite's
+ * own `environment.bat` does.
+ */
+export function suitePathSubdirs(
+    platform: NodeJS.Platform = process.platform
+): string[] {
+    return platform === 'win32' ? ['bin', 'lib'] : ['bin'];
+}
+
+/**
+ * The key an environment holds PATH under. Windows stores it as `Path`, and a
+ * spread copy of `process.env` keeps that casing — so blindly assigning `PATH`
+ * would hand the child two entries that differ only in case, and leave which
+ * one wins up to the process launcher.
+ */
+export function pathKeyOf(env: NodeJS.ProcessEnv): string {
+    return Object.keys(env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+}
+
+/**
  * Managed toolchain provider.
  *
  * The extension's synthesis flow spawns `yosys` and the `nextpnr-*` binaries.
@@ -63,6 +91,7 @@ export class ManagedToolchain {
 
     private readonly installRoot: string;
     private readonly binDir: string;
+    private readonly libDir: string;
     private readonly markerFile: string;
     /** Cached availability, refreshed after a successful install. */
     private installed: boolean;
@@ -80,6 +109,7 @@ export class ManagedToolchain {
             'oss-cad-suite'
         );
         this.binDir = path.join(this.installRoot, 'bin');
+        this.libDir = path.join(this.installRoot, 'lib');
         this.markerFile = path.join(this.installRoot, '.clash-toolkit-tag');
         this.installed = this.detectInstalled();
         this.managed = new Set(
@@ -209,9 +239,9 @@ export class ManagedToolchain {
 
     /**
      * Environment for spawning `resolvedCommand`. When it is one of our managed
-     * binaries, the managed `bin/` is prepended to PATH so it finds its
-     * co-located siblings (and DLLs on Windows). For anything else — a tool the
-     * user provides themselves — `process.env` is returned unchanged, so a
+     * binaries, the managed directories are prepended to PATH so it finds its
+     * co-located siblings (and its DLLs on Windows). For anything else — a tool
+     * the user provides themselves — `process.env` is returned unchanged, so a
      * managed install never shadows the user's own tools.
      */
     spawnEnv(resolvedCommand?: string): NodeJS.ProcessEnv {
@@ -219,11 +249,22 @@ export class ManagedToolchain {
             !!resolvedCommand &&
             resolvedCommand.startsWith(this.binDir + path.sep);
         if (!isManagedBinary) { return process.env; }
-        const prev = process.env.PATH || '';
-        return {
-            ...process.env,
-            PATH: this.binDir + (prev ? path.delimiter + prev : ''),
-        };
+
+        const env: NodeJS.ProcessEnv = { ...process.env };
+        const pathKey = pathKeyOf(env);
+        const prev = env[pathKey] || '';
+        const dirs = suitePathSubdirs().map((sub) => path.join(this.installRoot, sub));
+        env[pathKey] = [...dirs, ...(prev ? [prev] : [])].join(path.delimiter);
+
+        if (process.platform === 'win32') {
+            // `environment.bat` is the suite's only Windows entry point, so the
+            // variables its tools read have to be reproduced here. The Qt/GTK
+            // ones it also sets are gtkwave-only and deliberately left out.
+            env.YOSYSHQ_ROOT = this.installRoot + path.sep;
+            env.PYTHON_EXECUTABLE = path.join(this.libDir, 'python3.exe');
+            env.SSL_CERT_FILE = path.join(this.installRoot, 'etc', 'cacert.pem');
+        }
+        return env;
     }
 
     /**
@@ -351,7 +392,7 @@ export class ManagedToolchain {
                     if (!existsSync(this.exePath('yosys'))) {
                         throw new Error(
                             'extraction completed but no yosys binary was found ' +
-                            `at ${this.binDir}`
+                            `at ${this.binDir} — ${await this.describeExtracted()}`
                         );
                     }
 
@@ -391,19 +432,51 @@ export class ManagedToolchain {
             await tar.x({ file: archivePath, cwd: destParent });
             return;
         }
-        // Windows: a 7-Zip self-extracting .exe. Run it silently, extracting
-        // into globalStorage (it writes an `oss-cad-suite/` subtree).
+        // Windows: a 7-Zip console self-extractor (`7zSFX`, which understands
+        // `-o{dir}` and `-y`). It writes an `oss-cad-suite/` subtree, so
+        // globalStorage is the destination. `-o` names that destination
+        // outright instead of trusting the child's working directory, and both
+        // streams are drained — an unread stdout pipe fills after ~64 KB and
+        // would deadlock the extractor part-way through the archive.
         await new Promise<void>((resolve, reject) => {
-            const proc = spawn(archivePath, ['-y'], { cwd: destParent });
+            const proc = spawn(archivePath, [`-o${destParent}`, '-y'], {
+                cwd: destParent,
+                windowsHide: true,
+            });
+            let stderr = '';
+            proc.stdout?.resume();
+            proc.stderr?.on('data', (d: Buffer) => {
+                stderr = (stderr + d.toString()).slice(-2000);
+            });
             proc.on('error', reject);
             proc.on('close', (code) => {
                 if (code === 0) {
                     resolve();
                 } else {
-                    reject(new Error(`self-extractor exited with code ${code}`));
+                    const detail = stderr.trim();
+                    reject(new Error(
+                        `self-extractor exited with code ${code}`
+                        + (detail ? `: ${detail}` : '')
+                    ));
                 }
             });
         });
+    }
+
+    /**
+     * What the extraction actually left behind, for the "no yosys binary"
+     * error. The install path is one we can't reproduce locally on every
+     * platform, so a failure needs to say where the files went.
+     */
+    private async describeExtracted(): Promise<string> {
+        try {
+            const entries = await fs.readdir(this.installRoot);
+            return entries.length
+                ? `${this.installRoot} contains: ${entries.slice(0, 12).join(', ')}`
+                : `${this.installRoot} is empty`;
+        } catch {
+            return `${this.installRoot} does not exist`;
+        }
     }
 
     /** Resolve the release asset for the current platform, or undefined. */

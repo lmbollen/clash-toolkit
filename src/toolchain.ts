@@ -22,7 +22,7 @@ async function resolveCommandPath(cmd: string): Promise<string | undefined> {
     }
     const PATH = process.env.PATH || '';
     const exts = process.platform === 'win32'
-        ? (process.env.PATHEXT || '').split(';').filter(Boolean)
+        ? (process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean)
         : [''];
     for (const dir of PATH.split(path.delimiter)) {
         if (!dir) { continue; }
@@ -35,6 +35,29 @@ async function resolveCommandPath(cmd: string): Promise<string | undefined> {
         }
     }
     return undefined;
+}
+
+/**
+ * Explain the exit codes Windows uses to report that a process never got as
+ * far as running: the loader raises an NTSTATUS and the program produces no
+ * output at all, so without this the toolchain report blames a broken install
+ * on "exited with code 3221225781".
+ */
+export function describeExitCode(
+    code: number | null,
+    platform: NodeJS.Platform = process.platform
+): string {
+    if (platform !== 'win32' || code === null) { return ''; }
+    switch (code >>> 0) {
+        case 0xC0000135:
+            return ' (the executable could not start — a required DLL was not found)';
+        case 0xC000007B:
+            return ' (the executable could not start — 32/64-bit image mismatch)';
+        case 0xC0000142:
+            return ' (the executable failed to initialise)';
+        default:
+            return '';
+    }
 }
 
 /**
@@ -250,12 +273,16 @@ export class ToolchainChecker {
                             path: resolvedPath,
                         });
                     } else {
+                        // Name the binary when it isn't the bare command — a
+                        // managed copy failing to launch is a very different
+                        // problem from one missing off PATH.
+                        const which = cmd === parts[0] ? '' : ` (${cmd})`;
                         resolve({
                             name,
                             available: false,
-                            error: firstLine
-                                ? `Exited with code ${code}: ${firstLine}`
-                                : `Exited with code ${code}`,
+                            error: `Exited with code ${code}${which}`
+                                + describeExitCode(code)
+                                + (firstLine ? `: ${firstLine}` : ''),
                         });
                     }
                 });
