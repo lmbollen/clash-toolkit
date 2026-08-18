@@ -450,7 +450,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile && node scripts/verify-package.js",
-    "clean": "rm -rf out",
+    "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run clean && npm run compile && npm run lint",

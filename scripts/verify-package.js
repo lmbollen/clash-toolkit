@@ -54,13 +54,14 @@ const REQUIRED = [
 ];
 
 function packagedFiles() {
-	const vsce = path.join(
-		__dirname, '..', 'node_modules', '.bin',
-		process.platform === 'win32' ? 'vsce.cmd' : 'vsce'
-	);
+	// Run vsce's own entry script under this Node rather than the `.bin`
+	// shim: on Windows that shim is `vsce.cmd`, and since the fix for
+	// CVE-2024-27980 Node refuses to spawn a `.cmd` without `shell: true`
+	// (EINVAL) — which would block `vsce package` and `vsce publish` outright.
+	const vsce = require.resolve('@vscode/vsce/vsce');
 	// `vsce ls` does not itself run `vscode:prepublish`, but set a marker anyway
 	// so a future version that does cannot recurse forever.
-	const out = execFileSync(vsce, ['ls'], {
+	const out = execFileSync(process.execPath, [vsce, 'ls'], {
 		cwd: path.join(__dirname, '..'),
 		encoding: 'utf8',
 		maxBuffer: 64 * 1024 * 1024,
