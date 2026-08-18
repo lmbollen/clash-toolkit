@@ -54,7 +54,7 @@ common common-options
   build-depends:
     base,
     Cabal,
-    clash-prelude >= 1.8.4 && < 1.10,
+    clash-prelude >= 1.8.4,
     ghc-typelits-natnormalise,
     ghc-typelits-extra,
     ghc-typelits-knownnat
