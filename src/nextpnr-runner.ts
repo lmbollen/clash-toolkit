@@ -180,7 +180,7 @@ export class NextpnrRunner {
 					const proc = spawn(resolvedBinary, [
 						...wrapperArgs,
 						...deviceArgs, '--package', pkg, '--json', probeJson,
-					], { timeout: 5000, env: toolSpawnEnv(resolvedBinary) });
+					], { timeout: 5000, env: toolSpawnEnv(resolvedBinary), windowsHide: true });
 
 					let combined = '';
 					proc.stdout.on('data', (d) => { combined += d.toString(); });
@@ -345,7 +345,10 @@ export class NextpnrRunner {
 			const logger = getLogger();
 			const resolvedExecutable = resolveTool(executable);
 			const finishLog = logger?.command(resolvedExecutable, args);
-			const nextpnr = spawn(resolvedExecutable, args, { env: toolSpawnEnv(resolvedExecutable) });
+			const nextpnr = spawn(resolvedExecutable, args, {
+				env: toolSpawnEnv(resolvedExecutable),
+				windowsHide: true,
+			});
 
 			const onAbort = () => {
 				cancelled = true;

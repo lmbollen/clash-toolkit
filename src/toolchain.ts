@@ -239,8 +239,12 @@ export class ToolchainChecker {
             const baseArgs = parts.slice(1);
             const args = [...baseArgs, versionFlag];
 
-            const spawnOpts: { timeout: number; cwd?: string; env: NodeJS.ProcessEnv } =
-                { timeout: 10_000, env: toolSpawnEnv(cmd) };
+            const spawnOpts: {
+                timeout: number;
+                cwd?: string;
+                env: NodeJS.ProcessEnv;
+                windowsHide: boolean;
+            } = { timeout: 10_000, env: toolSpawnEnv(cmd), windowsHide: true };
             if (cwd) {
                 spawnOpts.cwd = cwd;
             }

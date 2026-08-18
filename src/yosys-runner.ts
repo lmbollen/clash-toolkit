@@ -243,7 +243,8 @@ export class YosysRunner {
 			const finishLog = logger?.command(yosysCmd, yosysArgs, options.workspaceRoot);
 			const yosys = spawn(yosysCmd, yosysArgs, {
 				cwd: options.workspaceRoot,
-				env: toolSpawnEnv(yosysCmd)
+				env: toolSpawnEnv(yosysCmd),
+				windowsHide: true,
 			});
 
 			let stdout = '';
@@ -899,7 +900,8 @@ export class YosysRunner {
 			const finishLog = logger?.command(yosysCmd, args, cwd);
 			const yosys = spawn(yosysCmd, args, {
 				cwd,
-				env: toolSpawnEnv(yosysCmd)
+				env: toolSpawnEnv(yosysCmd),
+				windowsHide: true,
 			});
 
 			let stdout = '';

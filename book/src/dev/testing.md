@@ -29,6 +29,7 @@ All tests live under `src/test/suite/` and use **Mocha** in TDD mode (`suite` / 
 | `internal-components.test.ts` | Unit | Internal component expansion |
 | `netlist-renderer.test.ts` | Unit | netlistsvg-based diagram rendering |
 | `packaging.test.ts` | Unit | What `vsce` would package: deny list, required files |
+| `spawn-options.test.ts` | Unit | Every external-tool spawn passes `windowsHide`, so no console window flashes on Windows |
 | `pnr-targets.test.ts` | Integration | End-to-end synthesis + place & route per target |
 | `ooc-blackbox.test.ts` | Integration | Out-of-context scripts stub sub-components as black boxes; a real Yosys run proves they survive |
 | `hls-client.test.ts` | Integration | HLS communication |

@@ -190,7 +190,8 @@ export class ClashCompiler {
 			const finishLog = logger?.command(command, args, cwd);
 			const clash = spawn(command, args, {
 				cwd,
-				env: process.env
+				env: process.env,
+				windowsHide: true,
 			});
 
 			let stdout = '';
