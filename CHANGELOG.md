@@ -5,6 +5,35 @@ All notable changes to **Clash Toolkit** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-08-18
+
+Two bugs found while investigating why the Xilinx and SmartFusion2 targets never
+finished: one of them had been stalling those runs for ten minutes at a time.
+
+### Fixed
+- **Xilinx and SmartFusion2 synthesis no longer hang.** Both targets stopped
+  making progress partway through and eventually failed with
+  `Yosys timed out after 600s`. Yosys drives the legacy `abc` as a co-process
+  over a pipe; when the mapping script finishes, abc prints its interactive
+  prompt and blocks waiting for a command that never comes, while Yosys is still
+  reading for more output. Neither side gives up. Whether it happens is a matter
+  of timing — the same script can work on an idle machine and hang on a busy
+  one, which is why it showed up reliably inside the editor and not from a
+  shell. These were the only two targets still on the legacy flow; iCE40, ECP5
+  and Gowin already used `abc9`, which hands abc a script file instead and so
+  cannot deadlock. `xilinx` now passes `-abc9`, and `sf2`, which has no such
+  option, drives `abc9` for its one LUT-mapping step. Expect slightly different
+  LUT mapping on those two targets as a result. A custom script of your own
+  should prefer `abc9` for the same reason — see
+  [Custom Yosys Scripts](https://lmbollen.github.io/clash-toolkit/guide/configuration.html#use-abc9-not-abc).
+- **No more console windows flashing past on Windows.** Every external tool was
+  spawned without `windowsHide`, which Node leaves off by default. The extension
+  host is a windowed process with no console of its own, so Windows gave each
+  child a brand-new console window. It was per process, so it multiplied: asking
+  for an iCE40 device's package list probes one nextpnr per candidate package at
+  once — fourteen windows — and `yosysJobs: auto` runs up to eight synthesis
+  jobs together.
+
 ## [0.5.1] - 2026-08-18
 
 Windows, exercised end to end for the first time: the managed toolchain now
