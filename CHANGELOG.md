@@ -5,6 +5,52 @@ All notable changes to **Clash Toolkit** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Windows, exercised end to end for the first time: the managed toolchain now
+installs and launches, and schematics are readable whatever colour theme you
+run.
+
+### Fixed
+- **The managed toolchain works on Windows.** Every binary the OSS CAD Suite
+  supplied was reported as missing. Unlike the Linux and macOS builds, the
+  Windows suite ships no wrapper scripts and keeps its ~160 runtime DLLs in
+  `lib/` rather than beside the executables, so `yosys.exe` and the
+  `nextpnr-*.exe` binaries died in the loader with `STATUS_DLL_NOT_FOUND`
+  before writing any output — which the probe could only read as "not
+  installed". `lib/` now joins `bin/` on PATH, the way upstream's
+  `environment.bat` does, and Windows spawns inherit the `YOSYSHQ_ROOT`,
+  `PYTHON_EXECUTABLE` and `SSL_CERT_FILE` that script sets. A failure to launch
+  no longer masquerades as a missing install either: the loader's NTSTATUS
+  codes are spelled out, and the error names the binary that was actually
+  spawned. Existing installs need no reinstall — the extracted tree was always
+  correct, only the environment was wrong.
+- **Installing the toolchain survives a long install path.** The Windows
+  release asset is a 7-Zip self-extractor that is not long-path aware, and the
+  suite's deepest entry sits 132 characters below its own root — so a global
+  storage path of any real length pushed part of the archive past Windows'
+  260-character limit, and the install died part-way through with a wall of
+  "Can not open output file", leaving a half-extracted tree behind. The
+  destination is now handed over in its `\?\` form, which opts the extractor
+  out of that limit.
+- **Cancelling a run no longer throws when the tool never started.** Signalling
+  a child that failed to spawn — yosys missing, or the run cancelled before the
+  process existed — quietly returns `false` on Linux and macOS but raises
+  `EINVAL` on Windows, so the cancellation surfaced as an unhandled error
+  instead of a cancelled run.
+- **Diagrams are readable on a dark colour theme.** netlistsvg draws black
+  lines and black text onto a transparent canvas, so the image preview editor
+  showed each schematic over whatever the theme paints behind it — black on
+  near-black, on any dark theme. Schematics are black-on-white by convention
+  and the skin's colours are not themeable, so the SVG now carries its own
+  white background, which also keeps it readable wherever else it is opened,
+  embedded or printed. Diagrams already on disk are redrawn by the next run.
+- **`npm test` and `vsce package` run on Windows.** `clean` called `rm -rf`,
+  which cmd.exe has no equivalent of, so `pretest` never got as far as the
+  suite; and `verify-package.js` spawned the `vsce.cmd` shim, which Node has
+  refused to execute without a shell since the fix for CVE-2024-27980 — gating
+  `vscode:prepublish`, and with it both packaging and publishing.
+
 ## [0.5.0] - 2026-08-05
 
 Out-of-context synthesis now means what it says — each component is judged with
