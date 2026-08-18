@@ -21,6 +21,7 @@ menus — and are hidden from the palette.
 |---------|-------------|
 | **Clash: Check Toolchain** | Probe every external tool (cabal, Yosys, nextpnr) and report what is reachable |
 | **Clash: Install Toolchain** | Pick which EDA tools the extension should download and manage itself |
+| **Clash: Install the Haskell Extension (for HLS)** | Reveal the Haskell extension in the Marketplace view. Function detection needs HLS, so this is also the action offered on the Functions row when the extension is missing |
 
 ## Sidebar
 
