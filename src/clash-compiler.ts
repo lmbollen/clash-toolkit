@@ -201,13 +201,19 @@ export class ClashCompiler {
 			const warnings: string[] = [];
 
 			// Cancellation: kill cabal with SIGTERM, escalate to SIGKILL if
-			// it ignores the request (e.g. mid-GHC-compilation).
+			// it ignores the request (e.g. mid-GHC-compilation). Both are
+			// guarded: an abort raised before the child is running — including
+			// one already set when compile() was called, or a spawn that failed
+			// because cabal is missing — has nothing to signal, and on Windows
+			// kill() throws EINVAL there instead of quietly doing nothing.
 			const onAbort = () => {
 				if (settled) { return; }
 				this.outputChannel.appendLine('\nCancelled — terminating cabal/Clash build');
-				clash.kill('SIGTERM');
+				try { clash.kill('SIGTERM'); } catch { /* never started, or already gone */ }
 				killTimer = setTimeout(() => {
-					if (!settled && clash.exitCode === null) { clash.kill('SIGKILL'); }
+					if (!settled && clash.exitCode === null) {
+						try { clash.kill('SIGKILL'); } catch { /* gone */ }
+					}
 				}, 5000);
 			};
 			if (options.abortSignal?.aborted) {

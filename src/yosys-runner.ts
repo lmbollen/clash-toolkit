@@ -255,12 +255,18 @@ export class YosysRunner {
 			const errors: YosysError[] = [];
 
 			// SIGTERM first; escalate to SIGKILL if yosys/abc ignores it.
+			// Both are guarded: an abort that lands before the child is running
+			// — including one already raised when synthesize() was called, or a
+			// spawn that fails because yosys is missing — has nothing to signal,
+			// and on Windows that throws EINVAL instead of quietly doing nothing.
 			const kill = (why: string) => {
 				if (settled) { return; }
 				this.outputChannel.appendLine(`\nWARNING: ${why} — terminating yosys`);
-				yosys.kill('SIGTERM');
+				try { yosys.kill('SIGTERM'); } catch { /* never started, or already gone */ }
 				killTimer = setTimeout(() => {
-					if (!settled) { yosys.kill('SIGKILL'); }
+					if (!settled) {
+						try { yosys.kill('SIGKILL'); } catch { /* gone */ }
+					}
 				}, 5000);
 			};
 			const timeoutHandle = setTimeout(() => {
@@ -910,9 +916,13 @@ export class YosysRunner {
 			// SIGTERM first; escalate to SIGKILL if yosys/abc ignores it so
 			// the process doesn't keep burning CPU after we've given up on it.
 			const kill = () => {
-				yosys.kill('SIGTERM');
+				// Guarded: a child that never started has nothing to signal, and
+				// on Windows kill() throws EINVAL there rather than returning false.
+				try { yosys.kill('SIGTERM'); } catch { /* never started, or already gone */ }
 				killTimer = setTimeout(() => {
-					if (yosys.exitCode === null) { yosys.kill('SIGKILL'); }
+					if (yosys.exitCode === null) {
+						try { yosys.kill('SIGKILL'); } catch { /* gone */ }
+					}
 				}, 5000);
 			};
 
