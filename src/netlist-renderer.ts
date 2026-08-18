@@ -149,6 +149,29 @@ export async function readNetlist(netlistPath: string): Promise<YosysNetlist> {
 	}
 }
 
+/**
+ * Give a rendered schematic an opaque white background.
+ *
+ * netlistsvg draws in black on a transparent canvas, so the image preview
+ * editor shows the diagram over whatever the active colour theme paints behind
+ * it — on a dark theme, black lines and black text on a near-black background.
+ * Schematics are black-on-white by convention and the skin's `#000` strokes are
+ * not themeable, so the background travels with the file instead of following
+ * the theme. That also keeps the SVG readable wherever else it is opened,
+ * embedded or printed.
+ */
+export function withOpaqueBackground(svg: string): string {
+	const openTag = /<svg\b[^>]*>/.exec(svg);
+	if (!openTag) { return svg; }
+	// stroke:none is not redundant — the document sets `svg { stroke:#000 }`,
+	// which the rect would otherwise inherit as a black border boxing in the
+	// whole diagram. fill is given explicitly for the same reason.
+	const background =
+		'<rect width="100%" height="100%" style="fill:#fff;stroke:none"/>';
+	const insertAt = openTag.index + openTag[0].length;
+	return svg.slice(0, insertAt) + background + svg.slice(insertAt);
+}
+
 export interface RenderOptions {
 	/** Yosys JSON netlist to render (as written by `write_json`). */
 	netlistPath: string;
@@ -187,7 +210,7 @@ export async function renderNetlistSvg(options: RenderOptions): Promise<string> 
 	if (!svg) {
 		throw new Error('netlistsvg produced no output');
 	}
-	await fs.writeFile(svgPath, svg, 'utf8');
+	await fs.writeFile(svgPath, withOpaqueBackground(svg), 'utf8');
 	return svgPath;
 }
 

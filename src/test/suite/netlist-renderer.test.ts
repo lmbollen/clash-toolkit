@@ -10,6 +10,7 @@ import {
 	selectTopModule,
 	svgPathForNetlist,
 	topModuleOf,
+	withOpaqueBackground,
 } from '../../netlist-renderer';
 import {
 	ensureSubDiagram,
@@ -168,6 +169,35 @@ suite('Netlist Renderer — component hierarchy', () => {
 	});
 });
 
+suite('Netlist Renderer — diagram background', () => {
+	// netlistsvg draws black-on-transparent, which the image preview editor
+	// shows over the active colour theme — unreadable on any dark theme.
+	test('a white background is inserted as the first drawn element', () => {
+		const out = withOpaqueBackground('<svg width="10" height="10"><g/></svg>');
+		assert.match(out, /^<svg width="10" height="10"><rect /);
+		assert.ok(out.includes('fill:#fff'), 'background should be opaque white');
+		assert.ok(out.endsWith('<g/></svg>'), 'existing content should be kept');
+	});
+
+	test('the background carries no stroke of its own', () => {
+		// The document sets `svg { stroke:#000 }`; an inheriting rect would
+		// draw a black border boxing in the whole diagram.
+		const out = withOpaqueBackground('<svg><g/></svg>');
+		assert.match(out, /<rect[^>]*stroke:none/);
+	});
+
+	test('the background spans the viewport rather than a fixed size', () => {
+		const out = withOpaqueBackground('<svg><g/></svg>');
+		assert.match(out, /<rect[^>]*width="100%"[^>]*height="100%"/);
+	});
+
+	test('output with no svg element is passed through untouched', () => {
+		// Never fabricate a document out of whatever the renderer returned.
+		assert.strictEqual(withOpaqueBackground(''), '');
+		assert.strictEqual(withOpaqueBackground('not markup'), 'not markup');
+	});
+});
+
 suite('Netlist Renderer — rendering', () => {
 	let tmpDir: string;
 
@@ -193,6 +223,13 @@ suite('Netlist Renderer — rendering', () => {
 		assert.strictEqual(svgPath, svgPathForNetlist(netlistPath));
 		const svg = await fs.readFile(svgPath, 'utf8');
 		assert.ok(svg.startsWith('<svg'), 'output should be an SVG document');
+		// Drawn in black, so it has to bring its own background rather than
+		// borrow whatever the colour theme paints behind it.
+		assert.match(
+			svg,
+			/<svg\b[^>]*><rect[^>]*fill:#fff/,
+			'the background should be the first thing drawn'
+		);
 		// The top module's own contents: the instance box is labelled with its
 		// module name, and its ports are drawn.
 		assert.ok(svg.includes('>sub<'), 'sub-module instance should be drawn as a box');
