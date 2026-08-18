@@ -26,6 +26,29 @@ export function suitePathSubdirs(
 }
 
 /**
+ * The destination to hand the Windows self-extractor's `-o` flag.
+ *
+ * The suite's deepest entry sits ~132 characters below its own root, and the
+ * 7-Zip self-extractor is not long-path aware — so an install root past ~125
+ * characters makes it fail part-way through with "Can not open output file"
+ * for every entry that crosses MAX_PATH, leaving a half-extracted tree. The
+ * `\\?\` prefix opts its file creation out of the 260-character limit. It
+ * requires a fully-qualified path with no relative components, which
+ * globalStorage always is, and spells UNC roots differently.
+ */
+export function extractionDest(
+    destParent: string,
+    platform: NodeJS.Platform = process.platform
+): string {
+    if (platform !== 'win32' || destParent.startsWith('\\\\?\\')) {
+        return destParent;
+    }
+    return destParent.startsWith('\\\\')
+        ? `\\\\?\\UNC\\${destParent.slice(2)}`
+        : `\\\\?\\${destParent}`;
+}
+
+/**
  * The key an environment holds PATH under. Windows stores it as `Path`, and a
  * spread copy of `process.env` keeps that casing — so blindly assigning `PATH`
  * would hand the child two entries that differ only in case, and leave which
@@ -435,18 +458,23 @@ export class ManagedToolchain {
         // Windows: a 7-Zip console self-extractor (`7zSFX`, which understands
         // `-o{dir}` and `-y`). It writes an `oss-cad-suite/` subtree, so
         // globalStorage is the destination. `-o` names that destination
-        // outright instead of trusting the child's working directory, and both
-        // streams are drained — an unread stdout pipe fills after ~64 KB and
-        // would deadlock the extractor part-way through the archive.
+        // outright instead of trusting the child's working directory — in its
+        // long-path form, since the archive's deepest entries otherwise cross
+        // MAX_PATH — and both streams are drained: an unread stdout pipe fills
+        // after ~64 KB and would deadlock the extractor part-way through.
         await new Promise<void>((resolve, reject) => {
-            const proc = spawn(archivePath, [`-o${destParent}`, '-y'], {
+            const proc = spawn(archivePath, [`-o${extractionDest(destParent)}`, '-y'], {
                 cwd: destParent,
                 windowsHide: true,
             });
             let stderr = '';
             proc.stdout?.resume();
             proc.stderr?.on('data', (d: Buffer) => {
-                stderr = (stderr + d.toString()).slice(-2000);
+                // Keep the head, not the tail: the extractor reports one line
+                // per failed entry, and the first is the one worth reading.
+                if (stderr.length < 2000) {
+                    stderr = (stderr + d.toString()).slice(0, 2000);
+                }
             });
             proc.on('error', reject);
             proc.on('close', (code) => {

@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { ManagedToolchain, pathKeyOf, suitePathSubdirs } from '../../tool-provider';
+import { ManagedToolchain, extractionDest, pathKeyOf, suitePathSubdirs } from '../../tool-provider';
 import { describeExitCode } from '../../toolchain';
 
 /**
@@ -129,6 +129,35 @@ suite('ManagedToolchain Test Suite', () => {
 		assert.strictEqual(toolchain.spawnEnv('yosys'), process.env);
 		assert.strictEqual(toolchain.spawnEnv(undefined), process.env);
 		assert.strictEqual(toolchain.spawnEnv('/usr/local/bin/yosys'), process.env);
+	});
+
+	// ---------------------------------------------------------------
+	// Extraction destination. The suite's deepest entry is ~132 characters
+	// below its own root, so on Windows a globalStorage path of any real
+	// length puts it past MAX_PATH unless the extractor is opted out.
+	// ---------------------------------------------------------------
+
+	test('Windows extracts through a long-path destination', () => {
+		assert.strictEqual(
+			extractionDest('C:\\Users\\someone\\AppData\\Roaming\\Code\\User\\globalStorage', 'win32'),
+			'\\\\?\\C:\\Users\\someone\\AppData\\Roaming\\Code\\User\\globalStorage'
+		);
+		// UNC roots spell the prefix differently; getting this wrong would
+		// point the extractor at a path that does not exist.
+		assert.strictEqual(
+			extractionDest('\\\\server\\share\\storage', 'win32'),
+			'\\\\?\\UNC\\server\\share\\storage'
+		);
+		// Idempotent, so a destination that already carries the prefix is not
+		// mangled into `\\?\\\?\…`.
+		assert.strictEqual(extractionDest('\\\\?\\C:\\storage', 'win32'), '\\\\?\\C:\\storage');
+	});
+
+	test('Linux and macOS extract to the plain path', () => {
+		// The prefix is Windows-only syntax; elsewhere it would be a literal
+		// directory name.
+		assert.strictEqual(extractionDest('/home/x/.config/Code/storage', 'linux'), '/home/x/.config/Code/storage');
+		assert.strictEqual(extractionDest('/Users/x/Library/storage', 'darwin'), '/Users/x/Library/storage');
 	});
 
 	// ---------------------------------------------------------------
