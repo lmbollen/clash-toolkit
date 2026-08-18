@@ -12,6 +12,14 @@ suite('Toolchain Checker Test Suite', () => {
 	let outputChannel: vscode.OutputChannel;
 	let checker: ToolchainChecker;
 
+	/**
+	 * A command that is always present and always exits 0, used as the
+	 * "available tool" probe. `echo` is a shell builtin on Windows rather than
+	 * an executable, so there is nothing for spawn() to find — go through
+	 * cmd.exe, which the checker splits into command + leading args for us.
+	 */
+	const ALWAYS_AVAILABLE = process.platform === 'win32' ? 'cmd /c echo' : 'echo';
+
 	suiteSetup(() => {
 		outputChannel = vscode.window.createOutputChannel('Test Toolchain');
 		checker = new ToolchainChecker(outputChannel);
@@ -30,8 +38,7 @@ suite('Toolchain Checker Test Suite', () => {
 	test('Should detect available system tools', async function () {
 		this.timeout(15000);
 
-		// 'echo' should always be available
-		const status = await checker.check('echo', 'echo', 'hello');
+		const status = await checker.check('echo', ALWAYS_AVAILABLE, 'hello');
 		assert.strictEqual(status.available, true, 'echo should be available');
 		assert.strictEqual(status.name, 'echo');
 	});
@@ -51,8 +58,8 @@ suite('Toolchain Checker Test Suite', () => {
 	test('Should cache results', async function () {
 		this.timeout(15000);
 
-		const first = await checker.check('test-cache', 'echo', 'v1');
-		const second = await checker.check('test-cache', 'echo', 'v1');
+		const first = await checker.check('test-cache', ALWAYS_AVAILABLE, 'v1');
+		const second = await checker.check('test-cache', ALWAYS_AVAILABLE, 'v1');
 		// Same object reference means it was cached
 		assert.strictEqual(first, second, 'Second call should return cached result');
 	});
@@ -60,9 +67,9 @@ suite('Toolchain Checker Test Suite', () => {
 	test('Should clear cache', async function () {
 		this.timeout(15000);
 
-		await checker.check('test-clear', 'echo', 'v1');
+		await checker.check('test-clear', ALWAYS_AVAILABLE, 'v1');
 		checker.clearCache();
-		const after = await checker.check('test-clear', 'echo', 'v1');
+		const after = await checker.check('test-clear', ALWAYS_AVAILABLE, 'v1');
 		// After clearing, it should have re-probed (new object)
 		assert.ok(after.available);
 	});
@@ -70,7 +77,7 @@ suite('Toolchain Checker Test Suite', () => {
 	test('Should format summary', async function () {
 		this.timeout(15000);
 
-		await checker.check('echo', 'echo', 'hello');
+		await checker.check('echo', ALWAYS_AVAILABLE, 'hello');
 		await checker.check('missing', 'nonexistent-tool-xyz', '--version');
 
 		const summary = checker.formatSummary();
