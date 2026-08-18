@@ -2,7 +2,7 @@
   "name": "clash-toolkit",
   "displayName": "Clash Toolkit",
   "description": "Community extension for Clash: synthesize, view schematics, and place-and-route Haskell hardware designs with Yosys and nextpnr.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "license": "BSD-2-Clause",
   "publisher": "LucasBollen",
   "icon": "resources/clash-icon.png",

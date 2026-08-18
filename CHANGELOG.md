@@ -5,7 +5,7 @@ All notable changes to **Clash Toolkit** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.1] - 2026-08-18
 
 Windows, exercised end to end for the first time: the managed toolchain now
 installs and launches, and schematics are readable whatever colour theme you
