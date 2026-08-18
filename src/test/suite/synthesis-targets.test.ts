@@ -92,6 +92,44 @@ suite('Synthesis Targets — registry', () => {
 			);
 		}
 	});
+
+	// The legacy `abc` flow drives abc as an interactive co-process and can
+	// deadlock against its prompt, timing out the whole run after 600s. Every
+	// target that reaches abc must therefore go through abc9, which hands it a
+	// script file and lets it exit. See "The abc9 flow" in synthesis-targets.ts.
+	test('no default script uses the legacy abc flow', () => {
+		for (const [id, target] of SYNTHESIS_TARGETS) {
+			const legacyAbc = target.defaultScript
+				.split('\n')
+				.map(l => l.trim())
+				.filter(l => /^abc\b/.test(l));
+			assert.deepStrictEqual(
+				legacyAbc, [],
+				`${id} drives legacy abc directly (${legacyAbc.join('; ')}) — use abc9`
+			);
+			assert.ok(
+				!/\babc\b(?!9)/.test(target.defaultScript.replace(/^#.*$/gm, '')),
+				`${id} default script mentions plain abc outside a comment`
+			);
+		}
+	});
+
+	test('targets whose synth command reaches abc opt into abc9', () => {
+		// xilinx takes -abc9; sf2 has no such option, so its map_luts step is
+		// driven by hand. Either way the script must name abc9.
+		for (const id of ['xilinx', 'sf2']) {
+			const script = SYNTHESIS_TARGETS.get(id)!.defaultScript;
+			assert.ok(script.includes('abc9'), `${id} should use abc9`);
+		}
+		assert.ok(
+			SYNTHESIS_TARGETS.get('xilinx')!.defaultScript.includes('synth_xilinx -top {topModule} -abc9'),
+			'xilinx should pass -abc9 to synth_xilinx'
+		);
+		const sf2 = SYNTHESIS_TARGETS.get('sf2')!.defaultScript;
+		for (const line of ['synth_sf2 -top {topModule} -run :map_luts', 'abc9 -lut 4', 'synth_sf2 -top {topModule} -run map_cells:']) {
+			assert.ok(sf2.includes(line), `sf2 script should contain "${line}"`);
+		}
+	});
 });
 
 // ── getTarget / getDefaultScript ────────────────────────────────────────────

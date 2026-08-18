@@ -89,6 +89,20 @@ shows is always the script the next run will execute.
 > one component builds its own fixed per-component script, so a custom
 > `elaborationScript` has no effect there. See [Elaboration](#elaboration) below.
 
+### Use `abc9`, not `abc`
+
+A custom script that maps logic should reach for **`abc9`** (or the `-abc9`
+option of a `synth_*` command). The legacy `abc` flow can hang: Yosys drives abc
+as a co-process over a pipe, and when abc finishes it prints its interactive
+prompt and waits for a command that never arrives, while Yosys waits for more
+output. Nothing breaks visibly — the run simply stops making progress until it
+fails with `Yosys timed out after 600s`.
+
+Whether it happens is a matter of timing, so a script can work on a quiet
+machine and hang on a busy one. The `abc9` flow hands abc a script file instead,
+so abc exits on its own and cannot deadlock. The built-in scripts all use it;
+the `xilinx` and `sf2` defaults were changed to it in 0.5.2 for this reason.
+
 ## Out-of-Context Synthesis
 
 ### Disabled (default)

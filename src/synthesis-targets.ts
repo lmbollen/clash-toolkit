@@ -179,6 +179,28 @@ write_json "{outputDir}/{outputBaseName}.json"
 
 // ---------------------------------------------------------------------------
 // Target registry
+//
+// ## The abc9 flow
+//
+// Targets that reach `abc` pass `-abc9` (or drive `abc9` directly) because the
+// legacy flow can hang, not because it maps better.
+//
+// Yosys runs the legacy flow as a co-process: it starts `yosys-abc -s`, writes
+// commands into its stdin, and reads results back from its stdout. When the
+// script is done abc prints a `YOSYS_ABC_DONE` sentinel — and then, because its
+// stdin is still open, prints its interactive prompt (`abc 08> `) and blocks in
+// `select()` waiting for a command that will never come, while yosys is still
+// reading for more output. Both sides wait forever.
+//
+// Whether it deadlocks is a matter of timing: abc's writes normally coalesce
+// into a single read and yosys moves past the sentinel, but when they arrive
+// separately — on a loaded machine, which the extension host reliably is — it
+// reads past it and blocks. It surfaced as `Yosys timed out after 600s` on the
+// xilinx and sf2 targets only, those being the two that used legacy `abc`.
+//
+// The `abc9` flow hands abc a script *file* rather than a pipe of commands, so
+// abc reaches EOF and exits on its own. It is structurally immune, which is
+// why ice40/ecp5/gowin — abc9 by default in Yosys — were never affected.
 // ---------------------------------------------------------------------------
 
 const targetList: SynthesisTarget[] = [
@@ -204,7 +226,8 @@ const targetList: SynthesisTarget[] = [
 		id: 'xilinx',
 		label: 'AMD / Xilinx 7-series',
 		synthCommand: 'synth_xilinx',
-		defaultScript: makeTargetScript('synth_xilinx -top {topModule}'),
+		// -abc9 is not a tuning choice here; see "The abc9 flow" above.
+		defaultScript: makeTargetScript('synth_xilinx -top {topModule} -abc9'),
 	},
 	{
 		id: 'gowin',
@@ -222,7 +245,15 @@ const targetList: SynthesisTarget[] = [
 		id: 'sf2',
 		label: 'Microsemi SmartFusion2',
 		synthCommand: 'synth_sf2',
-		defaultScript: makeTargetScript('synth_sf2 -top {topModule}'),
+		// synth_sf2 has no -abc9 option, so its single `abc -lut 4` step (the
+		// `map_luts` label) is driven by hand with abc9 instead. See "The abc9
+		// flow" above for why.
+		defaultScript: makeTargetScript(
+			'synth_sf2 -top {topModule} -run :map_luts\n'
+			+ 'abc9 -lut 4\n'
+			+ 'clean\n'
+			+ 'synth_sf2 -top {topModule} -run map_cells:'
+		),
 	},
 ];
 
